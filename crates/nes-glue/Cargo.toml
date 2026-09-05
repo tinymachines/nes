@@ -1,0 +1,10 @@
+[package]
+name = "nes-glue"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "The NES-001 mainboard's glue, authored from the parts' datasheets: the 74LS139 address decoder, the 74LS373 PPU address latch, the two TMM2115 SRAMs, the 74LS368 controller port buffers, the 74HC04 inverter behind PPU /A13, and the power-on reset chain. Nothing here goes through a netlist."
+repository = "https://github.com/tinymachines/nes"
+
+[dependencies]
+nes-bus = { git = "https://github.com/tinymachines/nes-bus", tag = "v0.1.1" }
