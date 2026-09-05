@@ -25,7 +25,7 @@ fn main() {
     let rom = ines::parse(&bytes).expect("iNES");
     let chr_ram = rom.chr_ram.then(|| vec![0u8; 0x2000]);
     let cart = rom.nrom().expect("NROM");
-    let mut c = Console::new(Box::new(cart), chr_ram, Alignment::default());
+    let mut c = Console::with_prg_ram(Box::new(cart), chr_ram, Alignment::default(), true);
     let t = std::time::Instant::now();
     c.run_frames(frames);
     let dt = t.elapsed().as_secs_f64();
@@ -40,6 +40,30 @@ fn main() {
         }
     }
     std::fs::write(&out, ppm).unwrap();
+    // blargg's reporting window: $6000 the result, $6001..$6003 the
+    // magic DE B0 61 while a test runs, $6004.. the text.
+    {
+        let b = c.board.borrow();
+        if let Some(ram) = &b.prg_ram {
+            if ram[1..4] == [0xde, 0xb0, 0x61] {
+                let text: String = ram[4..].iter().take_while(|&&x| x != 0).map(|&x| x as char).collect();
+                println!("$6000 result: {:02x}{}; text: {:?}", ram[0], if ram[0] == 0x80 { " (still running)" } else { "" }, text.trim());
+            }
+        }
+    }
+    if let Ok(list) = std::env::var("DUMP_CHR") {
+        let b = c.board.borrow();
+        let cart = b.cart.borrow();
+        for t in list.split(',') {
+            let t = u16::from_str_radix(t, 16).unwrap();
+            let bytes: Vec<String> = (0..16).map(|i| {
+                let a = t * 16 + i;
+                let v = match &cart.chr_ram { Some(r) => r[a as usize], None => 0 };
+                format!("{v:02x}")
+            }).collect();
+            println!("tile {t:02x}: {}", bytes.join(" "));
+        }
+    }
     println!(
         "{frames} frames in {dt:.2} s ({:.1} frames/s, {:.2}x real time); {} CPU half-cycles, {} reads, {} writes; wrote {out}",
         frames as f64 / dt,

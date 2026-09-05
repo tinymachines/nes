@@ -27,9 +27,12 @@ fn frames_come_out_one_per_ppu_frame_and_the_nmi_counts_them() {
     let mut c = console();
     c.run_frames(6);
     assert_eq!(c.frames.len(), 6);
-    // 89,342 dots a frame, eight master half-steps each.
+    // 89,342 dots a frame, eight master half-steps each; an odd frame
+    // with rendering on is a dot short, and says so in its parity.
     let dots_per_frame = (nes_bus::LINES * nes_bus::DOTS_PER_LINE) as u64;
-    assert_eq!(c.dots, 6 * dots_per_frame, "one frame is one full traversal of the table");
+    let short = c.frames.iter().filter(|f| f.parity == nes_bus::FrameParity::OddShort).count() as u64;
+    assert!((1..=3).contains(&short), "odd frames with rendering on are a dot short: {short} of 6");
+    assert_eq!(c.dots, 6 * dots_per_frame - short, "one frame is one full traversal of the table, less the skipped dot");
     assert_eq!(c.master, (c.dots - 1) * 8 + c.alignment.ppu_phase as u64 + 1, "the master counter is eight per dot (master {} dots {})", c.master, c.dots);
     let nmis = c.board.borrow().wram.read(0x0000);
     // NMI on from the program's setup (a few thousand cycles in), so

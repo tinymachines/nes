@@ -13,15 +13,29 @@ use v6502_pins::PinEngine;
 use crate::board::{Board, CpuBus};
 
 /// Which of the twelve master half-steps the CPU's half-cycle lands on,
-/// and which of the eight the PPU's dot does. AUTHORED for now: the
-/// switch-level dividers' power-on phases (the 2A03's ÷12 and the
-/// 2C02's ÷4 relative to one master clock started together) are the
-/// measurement N5's alignment gate is written from, and until it lands
-/// the console runs the default and stamps it.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+/// and which of the eight the PPU's dot does. MEASURED off the two
+/// switch-level chips' own power-on recipes, each stepped on its master
+/// clock from the last pulse of its reset: the 2A03's clk0 changes on
+/// master half-steps 4, 16, 28, ... (`v2a03-sim/examples/clk-phase.rs`)
+/// and the 2C02's pclk0 rises on 3, 11, 19, ... (`v2c02-sim/examples/
+/// clk-phase.rs`), so with both started together a CPU half-cycle
+/// begins on half-step 4 mod 12 and a dot on 3 mod 8. That is one of the
+/// alignments the dividers can power up in; a console records the one
+/// it ran in its stamp, and the alignment gate holds it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Alignment {
     pub cpu_phase: u8,
     pub ppu_phase: u8,
+}
+
+impl Alignment {
+    pub const MEASURED: Alignment = Alignment { cpu_phase: 4, ppu_phase: 3 };
+}
+
+impl Default for Alignment {
+    fn default() -> Alignment {
+        Alignment::MEASURED
+    }
 }
 
 pub struct Console {
@@ -38,7 +52,13 @@ pub struct Console {
 
 impl Console {
     pub fn new(cart: Box<dyn Cartridge>, chr_ram: Option<Vec<u8>>, alignment: Alignment) -> Console {
-        let board = Board::new(cart, chr_ram);
+        Console::with_prg_ram(cart, chr_ram, alignment, false)
+    }
+
+    /// The same with 8 KiB of cartridge RAM at $6000, the test
+    /// cartridges' reporting window (`Board::prg_ram`).
+    pub fn with_prg_ram(cart: Box<dyn Cartridge>, chr_ram: Option<Vec<u8>>, alignment: Alignment, prg_ram: bool) -> Console {
+        let board = Board::new(cart, chr_ram, prg_ram);
         let cpu = Rung::with_bus(Box::new(CpuBus(board.clone())), v2a03_micro::STACK_AT_H0_MEASURED);
         Console { board, cpu, alignment, master: 0, cpu_half_cycles: 0, dots: 0, frames: Vec::new() }
     }
@@ -56,6 +76,10 @@ impl Console {
             self.dots += 1;
         }
         if m % 12 == self.alignment.cpu_phase as u64 {
+            // Where this half-cycle begins inside the dot last stepped,
+            // for the PPU's timed reads.
+            let into_dot = ((m + 8 - self.alignment.ppu_phase as u64) % 8) as u8;
+            self.board.borrow_mut().half_steps_into_dot = into_dot;
             let nmi = self.board.borrow().ppu.nmi_asserted();
             let irq = {
                 let apu = self.cpu.apu.borrow();

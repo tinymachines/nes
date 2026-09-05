@@ -71,6 +71,11 @@ impl VramBus for PpuBus {
 pub struct Board {
     /// U1, behind /RAM CS: 2 KiB mirrored through $0000..$1FFF.
     pub wram: Tmm2115,
+    /// 8 KiB at $6000..$7FFF when fitted: not the NES-001's (it has
+    /// none) but a cartridge's, which nes-bus's NROM does not model;
+    /// blargg's test cartridges report through it, so the console offers
+    /// it as the board a test cartridge brings, labelled.
+    pub prg_ram: Option<Vec<u8>>,
     pub cart: Rc<RefCell<Cart>>,
     pub ppu: Fast,
     pub pads: [Controller; 2],
@@ -78,22 +83,32 @@ pub struct Board {
     /// CPU reads and writes seen, for the stamp and the tests.
     pub reads: u64,
     pub writes: u64,
+    /// Print every PPU register write with the PPU's state, for probes.
+    pub trace: bool,
+    /// Set by the console before each CPU half-cycle: PPU half-steps from
+    /// the start of the dot last stepped to this half-cycle's start, for
+    /// the PPU's timed \$2002 read.
+    pub half_steps_into_dot: u8,
 }
 
 impl Board {
-    pub fn new(cart: Box<dyn Cartridge>, chr_ram: Option<Vec<u8>>) -> Rc<RefCell<Board>> {
+    pub fn new(cart: Box<dyn Cartridge>, chr_ram: Option<Vec<u8>>, prg_ram: bool) -> Rc<RefCell<Board>> {
         let cart = Rc::new(RefCell::new(Cart { cart, ciram: Tmm2115::new(), chr_ram }));
         let ppu = Fast::on_bus(Box::new(PpuBus(cart.clone())));
-        Rc::new(RefCell::new(Board { wram: Tmm2115::new(), cart, ppu, pads: [Controller::default(); 2], open_bus: 0, reads: 0, writes: 0 }))
+        let trace = std::env::var_os("TRACE_PPU").is_some();
+        Rc::new(RefCell::new(Board { wram: Tmm2115::new(), prg_ram: prg_ram.then(|| vec![0u8; 0x2000]), cart, ppu, pads: [Controller::default(); 2], open_bus: 0, reads: 0, writes: 0, trace, half_steps_into_dot: 0 }))
     }
 
     fn read(&mut self, a: u16) -> u8 {
         self.reads += 1;
+        if self.trace && std::env::var_os("TRACE_BUS").is_some() {
+            eprintln!("bus read ${a:04x}");
+        }
         let d = cpu_decode(a, true);
         let v = if !d.ram_cs_n {
             self.wram.read(a)
         } else if !d.ppu_cs_n {
-            self.ppu.read((a & 7) as u8)
+            self.ppu.read_timed((a & 7) as u8, self.half_steps_into_dot)
         } else if a == 0x4016 {
             let line = self.pads[0].read();
             read_4016(line, true, true, self.open_bus)
@@ -104,11 +119,29 @@ impl Board {
             // The 2A03's own registers: write-only here, the Rung answers
             // $4015 before the bus sees it.
             self.open_bus
+        } else if (0x6000..0x8000).contains(&a) && self.prg_ram.is_some() {
+            self.prg_ram.as_ref().unwrap()[(a - 0x6000) as usize]
         } else {
             self.cart.borrow_mut().cart.cpu_read(a).unwrap_or(self.open_bus)
         };
         self.open_bus = v;
         v
+    }
+
+    /// The core's look at an operand byte or a zero-page pointer: RAM and
+    /// the cartridge only, no side effect, no open-bus update; a register
+    /// answers with the open bus rather than being read.
+    fn peek(&mut self, a: u16) -> u8 {
+        let d = cpu_decode(a, true);
+        if !d.ram_cs_n {
+            self.wram.read(a)
+        } else if (0x6000..0x8000).contains(&a) && self.prg_ram.is_some() {
+            self.prg_ram.as_ref().unwrap()[(a - 0x6000) as usize]
+        } else if a >= 0x4020 {
+            self.cart.borrow_mut().cart.cpu_read(a).unwrap_or(self.open_bus)
+        } else {
+            self.open_bus
+        }
     }
 
     fn write(&mut self, a: u16, v: u8) {
@@ -118,6 +151,9 @@ impl Board {
         if !d.ram_cs_n {
             self.wram.write(a, v);
         } else if !d.ppu_cs_n {
+            if self.trace {
+                eprintln!("ppu write ${:04x} <- {v:02x}  (v={:04x} t={:04x} w={} ctrl={:02x} mask={:02x} pos={:?})", a, self.ppu.v, self.ppu.t, self.ppu.w as u8, self.ppu.ctrl, self.ppu.mask, self.ppu.position());
+            }
             self.ppu.write((a & 7) as u8, v);
         } else if a == 0x4016 {
             // OUT0 is the controller strobe.
@@ -126,6 +162,8 @@ impl Board {
             }
         } else if a < 0x4020 {
             // The 2A03's registers: the Rung takes them from its own frames.
+        } else if (0x6000..0x8000).contains(&a) && self.prg_ram.is_some() {
+            self.prg_ram.as_mut().unwrap()[(a - 0x6000) as usize] = v;
         } else {
             self.cart.borrow_mut().cart.cpu_write(a, v);
         }
@@ -141,5 +179,8 @@ impl MicroBus for CpuBus {
     }
     fn write(&mut self, a: u16, v: u8) {
         self.0.borrow_mut().write(a, v)
+    }
+    fn peek(&mut self, a: u16) -> u8 {
+        self.0.borrow_mut().peek(a)
     }
 }
