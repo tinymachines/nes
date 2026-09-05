@@ -1,0 +1,24 @@
+[package]
+name = "nes-console"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "The NES console: the 2A03 and 2C02 ladder rungs on one master clock, through the authored glue and the cartridge edge. The only thing in the family that plugs anything into anything."
+repository = "https://github.com/tinymachines/nes"
+
+# The chip rungs. Each measures its tables out of its own switch-level
+# rung 0 at build time, from die data that is fetched and never committed
+# (tools/fetch-netlist.sh in each chip repository), so a bare git clone
+# of a chip repository builds data-free and its rung refuses; the console
+# therefore builds against SIBLING CHECKOUTS with their data fetched,
+# expected beside this repository as ../2a03 and ../2c02. The 6502's data
+# is a submodule cargo checks out, so its crates are git-pinned, at the
+# same revision the 2a03 pins (one MicroBus type, not two). A cold build
+# runs three rung 0s for their tables: a few minutes.
+[dependencies]
+nes-bus = { git = "https://github.com/tinymachines/nes-bus", tag = "v0.1.1" }
+nes-glue = { path = "../nes-glue" }
+v2a03-micro = { path = "../../../2a03/crates/v2a03-micro" }
+v2c02-fast = { path = "../../../2c02/crates/v2c02-fast" }
+v6502-micro = { git = "https://github.com/tinymachines/6502", package = "v6502-micro", rev = "76b28ab" }
+v6502-pins = { git = "https://github.com/tinymachines/6502", package = "v6502-pins", rev = "76b28ab" }
