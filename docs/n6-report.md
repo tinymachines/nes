@@ -133,11 +133,65 @@ takes the record and runs the same procedure; the recording of
 terminated-capture finding (the probe run flattering chroma by about
 40 percent) says the record must be taken terminated.
 
+## The procedure question, answered (2026-09-06, the same day)
+
+The plan's rule was not to fit the tolerance to the data, and the
+report above named a procedure question and a cause. The cause was
+wrong, and the gate said so as soon as it was tried: the reference
+side of the comparison now goes through the card model's front end
+(`ntsc_source_cap::front_end`, ntsc-crt 0.2.7: the anti-alias lowpass
+alone, held to the model at the grid rate), which is right in
+principle (a synthesis compared with a capture must carry the capture's
+band limit), and it moved nothing: 367 of 436 regions either way. The
+recovery itself was then held to a front-ended synthesis on a bars
+frame and reproduced it to 0.0022 V worst and 0.3 percent of chroma
+gain, so the instrument was not it either. What was left was the
+scoring's own geometry, and a sweep of the region margin showed it: one
+dot in from the edge of a sixteen-dot bar is inside the decoder's chroma
+settling distance, and the filter's transitions were the residual (the
+worst chroma vector 0.0088 at one dot, 0.003 at two, 0.0001 at four).
+
+Two changes follow, both derived rather than chosen. The margin is now
+the decoder's: half the decimated lowpass's span plus the two decimated
+samples the interpolation reaches, five dots (`margin_dots`, from the
+`Decoder` instance's fields). And since blargg's full_palette bars are
+sixteen dots wide, this repository authored a bars cartridge of its own
+(`testrom::bars_program`, exported by `export-testrom bars`, nobody's
+game): thirty-two-dot cells, the twelve hues at one luma row and the
+backdrop, the row stepping every 120 frames through 1, 2, 3, 0, so a
+run of 100, 220, 340 or 460 frames scores one row.
+
+That cartridge found a third instrument flaw, at luma row 0 only: every
+hue missed by a rotation that grew with the bar's position on the line,
+and the recovery read the rate 145 ppm wrong on a 0 ppm capture. The
+darkest colours' low level, after the card's filter, dips below the
+sync threshold for half a subcarrier cycle, and every trough was a sync
+edge to the line walk. ntsc-crt 0.2.8 qualifies an edge by a
+microsecond of sync after it; the real records are unchanged.
+
+The synthetic roundtrip, on the bars cartridge, with the front end on
+both sides and the derived margin, at the plan's tolerances (luma
+0.01, hue 1.0 degree, saturation 5 percent or 0.005):
+
+| luma row | regions | within all three | worst luma | worst hue | worst saturation |
+|---|---|---|---|---|---|
+| 1 | 13 | 13 | 0.0001 | 0.3 degrees | 0.0011 |
+| 2 | 13 | 13 | 0.0001 | 0.3 degrees | 0.0012 |
+| 3 | 13 | 13 | 0.0001 | 0.3 degrees | 0.0005 |
+| 0 | 13 | 13 | 0.0001 | 0.3 degrees | 0.0008 |
+
+It closes. On full_palette the same procedure leaves two regions wide
+enough to score, both grey, both within: that cartridge cannot carry a
+hue verdict at this decoder's resolution, which is recorded rather than
+worked around. The real capture's procedure is the same one, and the
+bars cartridge is now also the ROM the bench was waiting for.
+
 ## What stays for the bench
 
-- The bars record: `full_palette.nes` on the real console, terminated,
-  at the scope's rate, then `capture-score rom frames record.u8
-  125000000`.
+- The bars record: this repository's bars cartridge (`export-testrom
+  bars`) on the real console, terminated, at the scope's rate, then
+  `capture-score bars.nes frames record.u8 125000000` at a frame count
+  inside the luma row on screen.
 - The emphasis lead (2c02 report): whether the real $2001 write's
   emphasis lands two dots ahead of a colour change, or whether the
   harness's data-at-start access shape made it look so.

@@ -12,8 +12,17 @@
 //! `recover_nes`). Real: the file the M4 tools read (u8 samples at the
 //! declared rate), the same recovery. Regions are found in the console's
 //! own frame: the largest flat rectangle of every distinct (colour,
-//! emphasis) at least 12 dots wide and 6 rows tall, scored one dot in
-//! from each edge.
+//! emphasis) at least 6 rows tall and wide enough to be scored a
+//! settling distance in from each edge, that distance derived from the
+//! decoder's own chroma filter (`margin_dots`).
+//!
+//! Both sides carry the capture's band limit: the synthesis goes through
+//! the card model's front end (`ntsc_source_cap::front_end`, its
+//! anti-alias lowpass alone) before the decoder, since 2026-09-06's
+//! procedure decision (docs/n6-report.md): a decoder fed the raw
+//! square-wave synthesis sees harmonics a card never passes, and the
+//! first run's hue and saturation misses were that. SYNTH_RAW=1 scores
+//! against the raw synthesis instead, the way the first run did.
 //!
 //! Tolerances (docs/n6-plan.md, stated before measuring): synthetic,
 //! luma within 0.01, hue within 1.0 degree where the synthesis has a
@@ -26,7 +35,7 @@ use nes_bus::{DotFrame, ACTIVE_DOTS, ACTIVE_ROWS};
 use nes_console::{ines, Alignment, Console, Picture};
 use ntsc_grid::CompositeFrame;
 use ntsc_source_cap::ingest::{auto_level_nes, read_capture};
-use ntsc_source_cap::{capture_model, recover_nes, Capture};
+use ntsc_source_cap::{capture_model, front_end, recover_nes, Capture};
 
 const WIDTH: usize = 2048;
 const SAMPLES_PER_DOT: usize = WIDTH / ACTIVE_DOTS;
@@ -47,7 +56,7 @@ struct Region {
 /// rows where the runs overlap by 8 dots or more (the extent kept is
 /// the intersection: a bar's edges may step from row to row, as
 /// full_palette's do), at least 6 rows and 12 dots in the end.
-fn regions(f: &DotFrame) -> Vec<Region> {
+fn regions(f: &DotFrame, margin: usize) -> Vec<Region> {
     let mut best: std::collections::BTreeMap<(u8, u8), Region> = Default::default();
     let mut open: Vec<Region> = Vec::new();
     for row in 0..ACTIVE_ROWS {
@@ -79,19 +88,29 @@ fn regions(f: &DotFrame) -> Vec<Region> {
         }
         for (i, o) in open.iter().enumerate() {
             if !used[i] {
-                consider(&mut best, *o);
+                consider(&mut best, *o, margin);
             }
         }
         open = next;
     }
     for o in &open {
-        consider(&mut best, *o);
+        consider(&mut best, *o, margin);
     }
     best.into_values().collect()
 }
 
-fn consider(best: &mut std::collections::BTreeMap<(u8, u8), Region>, r: Region) {
-    if r.row1 - r.row0 < 6 || r.x1 - r.x0 < 12 {
+/// How far inside a region's edge the decoder's chroma has settled, in
+/// dots, from the decoder's own filter: half the decimated lowpass's
+/// span plus the two decimated samples the interpolation reaches, rounded
+/// up. DERIVED from the instance, not chosen: the first run scored one
+/// dot in from the edges of sixteen-dot bars and read the filter's
+/// transitions as a chroma residual (docs/n6-report.md).
+fn margin_dots(dec: &ntsc_decode::Decoder) -> usize {
+    (dec.uv_taps.len() * dec.uv_decimation / 2 + 2 * dec.uv_decimation).div_ceil(SAMPLES_PER_DOT)
+}
+
+fn consider(best: &mut std::collections::BTreeMap<(u8, u8), Region>, r: Region, margin: usize) {
+    if r.row1 - r.row0 < 6 || r.x1 - r.x0 < 2 * margin + 10 {
         return;
     }
     let area = |r: &Region| (r.row1 - r.row0) * (r.x1 - r.x0);
@@ -111,7 +130,8 @@ fn score(dec: &ntsc_decode::Decoder, frame: &CompositeFrame, r: &Region) -> Scor
     // The comb wants both neighbours: row 0 is not decoded.
     let row0 = r.row0.max(1);
     let yuv = dec.decode_yuv(frame, row0, r.row1 - row0, WIDTH);
-    let (s0, s1) = ((r.x0 + 1) * SAMPLES_PER_DOT, (r.x1 - 1) * SAMPLES_PER_DOT);
+    let margin = margin_dots(dec);
+    let (s0, s1) = ((r.x0 + margin) * SAMPLES_PER_DOT, (r.x1 - margin) * SAMPLES_PER_DOT);
     let (mut my, mut mu, mut mv, mut n) = (0.0f64, 0.0, 0.0, 0.0);
     for row in 0..r.row1 - row0 {
         for x in s0..s1 {
@@ -146,9 +166,15 @@ fn main() {
     let mut picture = Picture::decode_only();
     let encoded: Vec<CompositeFrame> = c.frames.iter().map(|f| picture.encode(f)).collect();
     let last = c.frames.last().unwrap();
-    let synth = encoded.last().unwrap();
-    let regions = regions(last);
-    println!("{} frames of {}; {} flat regions of distinct (colour, emphasis) in the last frame ({:?})", frames, args[1], regions.len(), last.parity);
+    let raw = std::env::var("SYNTH_RAW").is_ok_and(|v| v == "1");
+    let synth = if raw { encoded.last().unwrap().clone() } else { front_end(encoded.last().unwrap()) };
+    let synth = &synth;
+    let margin = margin_dots(picture.decoder());
+    let regions = regions(last, margin);
+    println!(
+        "{} frames of {}; {} flat regions of distinct (colour, emphasis) in the last frame ({:?}), scored {margin} dots in from their edges (the decoder's chroma settling); the synthesis {}",
+        frames, args[1], regions.len(), last.parity, if raw { "raw" } else { "through the card model's front end" }
+    );
 
     let (cap, what): (Capture, String) = match &real {
         Some((path, rate)) => {

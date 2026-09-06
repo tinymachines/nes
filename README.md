@@ -55,14 +55,19 @@ sample, and the phase after twelve frames is the grid's arithmetic
 (forcing every frame Even is red). `full_palette.nes`, the bars
 cartridge, paints through the console now that the 2C02's picture with
 rendering off is measured (the palette entry v addresses, the $2006 and
-$2007 timings, the emphasis bit). `capture-score` runs the bars through
-ntsc-crt's capture-card model and recovers them the way the real
-capture is recovered: luma holds within 0.01 on all 436 regions, and
-the hue and saturation miss the stated tolerances on 69 regions by a
-chroma residual of at most 0.0086 that belongs to the card model's
-anti-alias filter against the encoder's square wave, recorded, not
-fitted. The first run found the re-referencing a histogram bin coarse,
-fixed in ntsc-crt 0.2.4. The real bars record is the bench item.
+$2007 timings, the emphasis bit). `capture-score` runs a bars cartridge
+through ntsc-crt's capture-card model and recovers it the way the real
+capture is recovered, the synthesis through the same front end, every
+region scored a decoder-derived settling distance in from its edges:
+on this repository's own bars cartridge (`export-testrom bars`,
+thirty-two-dot cells of the twelve hues at each luma row) every region
+holds the plan's tolerances at all four rows (worst luma 0.0001, hue
+0.3 degrees, saturation 0.0012). The first runs found the instrument
+three times (a level re-referencing a histogram bin coarse, a dark
+picture taken for blanking, a chroma trough taken for a sync edge),
+each fixed in ntsc-crt; blargg's full_palette bars are too narrow for
+a hue verdict at the decoder's resolution and say so. The real bars
+record is the bench item, and the cartridge for it exists now.
 
 N5 (the console) has gates 1 and 2 recorded and gate 3 open
 (`docs/n5-report.md`): `nes-console` runs the 2A03 core on rung 3 and
@@ -130,6 +135,10 @@ cargo run --release -p nes-console --example run-rom -- rom.nes [frames] [out.pp
                                   # through Rung C and the CRT stages,
                                   # DECODED=out.ppm the decoded grid;
                                   # WAV=out.wav the sound at 48 kHz
+cargo run --release -p nes-console --example export-testrom -- out.nes [bars]
+                                  # the test cartridge, or the bars
+                                  # cartridge, as an iNES file: nobody's
+                                  # game, the console's own
 cargo run --release -p nes-console --example capture-score -- rom.nes [frames] [record.u8 rate]
                                   # the capture path: the ROM's frames
                                   # through the card model (or a real

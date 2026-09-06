@@ -10,11 +10,11 @@ repository = "https://github.com/tinymachines/nes"
 nes-bus = { git = "https://github.com/tinymachines/nes-bus", tag = "v0.1.1" }
 nes-console = { path = "../nes-console" }
 nes-glue = { path = "../nes-glue" }
-ntsc-grid = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.4" }
-ntsc-source-nes = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.4" }
-ntsc-decode = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.4" }
-ntsc-crt = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.4" }
-ntsc-wasm = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.4" }
+ntsc-grid = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.8" }
+ntsc-source-nes = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.8" }
+ntsc-decode = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.8" }
+ntsc-crt = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.8" }
+ntsc-wasm = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.8" }
 wgpu = "22.1"
 pollster = "0.3"
 winit = "0.30"
