@@ -16,7 +16,7 @@
 use nes_bus::DotFrame;
 use ntsc_crt::{CrtParams, CrtPipeline, DisplayFrame};
 use ntsc_decode::{Decoder, LinearRgbFrame};
-use ntsc_grid::{Phase, Profile};
+use ntsc_grid::{CompositeFrame, Phase, Profile};
 use ntsc_source_nes::{burst_axis_offset, encode_frame, levels, Levels};
 
 /// The decoded picture's grid: active samples per line by visible rows,
@@ -75,12 +75,26 @@ impl Picture {
         self.origin
     }
 
-    /// Encode, decode and (with the stages on) display one frame. The
-    /// phase the frame leaves is carried to the next push.
-    pub fn push(&mut self, dots: &DotFrame) -> Shown {
+    /// Encode one frame at the carried phase and carry the phase it
+    /// leaves: the composite signal itself, which is what a capture of
+    /// the console sees (the `capture-score` example).
+    pub fn encode(&mut self, dots: &DotFrame) -> CompositeFrame {
         let frame = encode_frame(&self.levels, dots, self.origin);
         self.origin = frame.next_origin();
         self.frames += 1;
+        frame
+    }
+
+    /// The decoder the picture decodes with (Rung C), for scoring a
+    /// capture through the identical decoder.
+    pub fn decoder(&self) -> &Decoder {
+        &self.decoder
+    }
+
+    /// Encode, decode and (with the stages on) display one frame. The
+    /// phase the frame leaves is carried to the next push.
+    pub fn push(&mut self, dots: &DotFrame) -> Shown {
+        let frame = self.encode(dots);
         let decoded = self.decoder.decode(&frame, COMB_ROW0, DECODED_HEIGHT, DECODED_WIDTH);
         let displayed = self.crt.as_mut().map(|crt| crt.process(&decoded));
         Shown { decoded, displayed }
