@@ -195,6 +195,7 @@ bars cartridge is now also the ROM the bench was waiting for.
 - The emphasis lead (2c02 report): whether the real $2001 write's
   emphasis lands two dots ahead of a colour change, or whether the
   harness's data-at-start access shape made it look so.
-- N5's carried items, unchanged: the NMI arrival on the scope, gate
-  3's ROM, 8x16 sprites, the reset hold, the DMC fetch inside sprite
-  DMA.
+- N5's carried items as they stand: the NMI arrival on the scope, gate
+  3's ROM, the reset hold. (8x16 sprites and the DMC fetch inside sprite
+  DMA closed on 2026-09-06, the second leaving the die's sample address
+  under a collision as a logic-analyser question, 2a03 docs/n3-report.md.)
