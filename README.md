@@ -16,6 +16,20 @@ anything.
 
 ## Status
 
+N8 (the shell) is built and gated as far as a box without a screen can
+gate it (`docs/n8-report.md`): `nes-shell rom.nes` puts the console in
+a window with the three-line comb decode and the five CRT stages as
+compute passes on the GPU, held to ntsc-crt's CPU chain on every
+component of every pixel (worst 4.8e-7 with the authored parameters,
+2.8e-5 with the mask and geometry on, against 1e-3 stated; about a
+millisecond a frame where the CPU took 83); the console on its own
+thread paced by the wall clock through ntsc-wasm's drift policy,
+duplicates and drops counted; the sound through cpal; the keyboard as
+controller 1. It ran under a virtual display here. `nes-wasm` is the
+browser target: the console with its sound behind wasm-bindgen, 91
+frames a second under node. The desk items are the real display, a
+speaker and a hand.
+
 N7 (the sound) has its machine half closed (`docs/n7-report.md`):
 `Sound` takes the 2A03's five output codes after every CPU half-cycle
 through the two DACs (the nesdev table, now `v2a03-dac`) and the
@@ -125,6 +139,25 @@ cargo run --release -p nes-console --example capture-score -- rom.nes [frames] [
                                   # is held to the plan's tolerances
                                   # (exit 1 on a miss), a real record
                                   # is recorded
+cargo build --release -p nes-shell && target/release/nes-shell rom.nes
+                                  # the console in a window (a display
+                                  # session, a GPU): arrows, Z and X for
+                                  # B and A, Enter and right Shift for
+                                  # Start and Select, Escape to quit;
+                                  # counters on exit. NES_SHELL_TICKS=n
+                                  # exits after n redraws (the smoke run
+                                  # under Xvfb)
+cargo test --release -p nes-shell # the GPU picture against the CPU chain
+                                  # (SKIPs without an adapter,
+                                  # REQUIRE_GPU=1 insists; MUTATE=1 drops
+                                  # persistence, red), the paced loop and
+                                  # the ring on a synthetic clock
+cargo run --release -p nes-console --example picture-bench -- rom.nes
+                                  # where a frame's time goes on one core
+cargo check --target wasm32-unknown-unknown -p nes-console
+wasm-pack build crates/nes-wasm --target nodejs --out-dir /tmp/nes-wasm --release
+node tools/wasm-bench.mjs /tmp/nes-wasm rom.nes [frames]
+                                  # the browser target, measured under node
 cargo run --release -p nes-console --example trace-cpu -- rom.nes
 cargo run --release -p nes-console --example flat-cpu -- rom.nes <half-cycles>
                                   # the instruments: the CPU's bus through

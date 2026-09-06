@@ -127,8 +127,7 @@ impl Handle {
                         *lt.lock().unwrap() = Some((seq, f));
                     }
                     let ran = l.frames_run - before;
-                    if ran > 0 {
-                        let ns = now.elapsed().as_nanos() as u64 / ran;
+                    if let Some(ns) = (now.elapsed().as_nanos() as u64).checked_div(ran) {
                         let mut t = ft.lock().unwrap();
                         t.0 += ns * ran;
                         t.1 = t.1.max(ns);

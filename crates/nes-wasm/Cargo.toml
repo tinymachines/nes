@@ -1,0 +1,18 @@
+[package]
+name = "nes-wasm"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "The console for the browser (N8's second target): the console with its sound behind wasm-bindgen, frames and 48 kHz samples out. The page that hosts it is the roof's; tools/wasm-bench.mjs measures it under node."
+repository = "https://github.com/tinymachines/nes"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+nes-bus = { git = "https://github.com/tinymachines/nes-bus", tag = "v0.1.1" }
+nes-console = { path = "../nes-console" }
+nes-glue = { path = "../nes-glue" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"

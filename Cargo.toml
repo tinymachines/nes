@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/nes-glue", "crates/nes-console", "crates/nes-shell"]
+members = ["crates/nes-glue", "crates/nes-console", "crates/nes-shell", "crates/nes-wasm"]
 
 # The chip crates measure their tables out of rung 0 at build time;
 # unoptimised build scripts would take many times longer.
