@@ -38,7 +38,7 @@ source = "git+https://github.com/tinymachines/halfphi?tag=v0.1.6#1d460834d36728c
 [[package]]
 name = "halfphi"
 version = "0.1.6"
-source = "git+https://github.com/tinymachines/6502?rev=0c239cc#0c239cccbdab608ae92e4cf36d50c08e645ff180"
+source = "git+https://github.com/tinymachines/6502?rev=8b9e0b5#8b9e0b5494b5e57bfcc829a0d746546ca8a3ace2"
 
 [[package]]
 name = "hashbrown"
@@ -336,7 +336,7 @@ dependencies = [
 [[package]]
 name = "v6502-micro"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/6502?rev=0c239cc#0c239cccbdab608ae92e4cf36d50c08e645ff180"
+source = "git+https://github.com/tinymachines/6502?rev=8b9e0b5#8b9e0b5494b5e57bfcc829a0d746546ca8a3ace2"
 dependencies = [
  "v6502-netlist",
  "v6502-pins",
@@ -346,23 +346,23 @@ dependencies = [
 [[package]]
 name = "v6502-netlist"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/6502?rev=0c239cc#0c239cccbdab608ae92e4cf36d50c08e645ff180"
+source = "git+https://github.com/tinymachines/6502?rev=8b9e0b5#8b9e0b5494b5e57bfcc829a0d746546ca8a3ace2"
 dependencies = [
  "earcutr",
- "halfphi 0.1.6 (git+https://github.com/tinymachines/6502?rev=0c239cc)",
+ "halfphi 0.1.6 (git+https://github.com/tinymachines/6502?rev=8b9e0b5)",
 ]
 
 [[package]]
 name = "v6502-pins"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/6502?rev=0c239cc#0c239cccbdab608ae92e4cf36d50c08e645ff180"
+source = "git+https://github.com/tinymachines/6502?rev=8b9e0b5#8b9e0b5494b5e57bfcc829a0d746546ca8a3ace2"
 
 [[package]]
 name = "v6502-sim"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/6502?rev=0c239cc#0c239cccbdab608ae92e4cf36d50c08e645ff180"
+source = "git+https://github.com/tinymachines/6502?rev=8b9e0b5#8b9e0b5494b5e57bfcc829a0d746546ca8a3ace2"
 dependencies = [
- "halfphi 0.1.6 (git+https://github.com/tinymachines/6502?rev=0c239cc)",
+ "halfphi 0.1.6 (git+https://github.com/tinymachines/6502?rev=8b9e0b5)",
  "v6502-netlist",
  "v6502-pins",
 ]

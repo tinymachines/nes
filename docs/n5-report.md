@@ -1,7 +1,7 @@
 # N5 report: the console, gates 1 and 2 recorded, gate 3 open
 
-Run stamp: 2026-09-05, rustc 1.97.1. Pins: 6502 `0c239cc` (v6502-micro,
-v6502-pins, v6502-sim as the gate's oracle), 2a03 `0e6fc4e` (v2a03-micro
+Run stamp: 2026-09-06, rustc 1.97.1. Pins: 6502 `8b9e0b5` (v6502-micro,
+v6502-pins, v6502-sim as the gate's oracle), 2a03 `44277e1` (v2a03-micro
 by path), 2c02 `474b7e7` (v2c02-fast by path), nes-bus v0.1.1, nes-glue
 from N4. Alignment stamp: `Alignment::MEASURED`, cpu_phase 4, ppu_phase
 3. Throughput: 125 to 140 frames a second on one core, 2.1x to 2.3x
@@ -152,18 +152,27 @@ there. Alignment 4,3 unless stated.
 | ppu_vbl_nmi 10 even_odd_timing | fails #2 by one dot on the sync it takes from the race ("skipped too soon"); it passed under the race's earlier, fitted window |
 | sprite_hit_tests 01..07, 09..11 | **pass** (on screen) |
 | sprite_hit_tests 08 double_height | refused by name: the fast PPU does not model 8x16 sprites |
-| apu_test 3 irq_flag, 8 dmc_rates | pass |
-| apu_test 1 len_ctr | fails #4: a $4017 write with bit 7 set must clock the length counters at once; `Apu::apply` only reseats the frame position |
-| apu_test 2 len_table | fails (channel 0): follows from 1 |
-| apu_test 4 jitter | fails #5: the $4017 write's effect is not delayed by the extra cycle on an odd CPU cycle |
-| apu_test 5 len_timing | fails #3: the first length clock after a mode-0 write comes too late (`fit::FRAME_WRITE_LAG` and the phase table were fitted to the die's own free-running sequence, not to a write) |
-| apu_test 6 irq_flag_timing | fails #3: the frame IRQ flag first sets too late after the write, the same fit |
-| apu_test 7 dmc_basics | fails #19: no one-byte sample buffer filled at once when empty |
+| apu_test 1..8 | **8 of 8 pass** (2026-09-06; six had failed on the first run) |
 
-The APU rows are N3's tables meeting a CPU-side oracle for the first
-time; every one is the frame sequencer's position after a $4017 write,
-or the DMC's buffer, and none is the sequence itself (3 and 8 pass).
-They carry to the 2a03 repository by name.
+The APU rows were N3's tables meeting a CPU-side oracle for the first
+time, and the six that failed were every one the sequencer's position
+after a $4017 write, the status register's timing, or the DMC's byte
+count, none the sequence itself. Each was measured on the switch-level
+2A03 before being authored (the 2a03 repository, 2026-09-06): the
+write's jitter (its reset lands one half-step after the strobe on one
+APU parity and three on the other, every later event two apart, the
+recorder now holding both parities); a mode-1 write's immediate
+quarter and half clocks; the status latched at the end of the read's
+phi2, a half-step after the core asks its bus (the 6502's
+`MicroBus::read_late` carries that, the pins keeping the bus's byte);
+the frame IRQ flag set on three consecutive cycles, so a read clearing
+it inside them finds it set again; the triangle's and the noise's
+length bits on the die's one half-step; and the DMC's byte counted off
+six half-steps after its bus read, which lands on the DMA's grid three
+after a request six (or eight) after the enable, so the enable's clear
+of the DMC IRQ comes before the flag the fetch raises. Held by
+`tests/reads.rs` there (the Rung on a bus against rung 0 at the pins,
+the latched byte included) and by ten worlds of the code gate.
 
 ## What the ROMs taught the chips
 
@@ -216,7 +225,6 @@ on the undriven bits), which is the plumbing and not the play.
   05, 06, 07, 08 and 10.
 - Gate 3, when a ROM is at hand.
 - 8x16 sprites in the fast PPU (sprite_hit 08).
-- The APU's $4017 write behaviour and the DMC sample buffer (2a03).
 - The RES hold on the 2A03 core and $4015's reads, from N3.
 - Rung 0 differs from the part on ANC #imm and ASR #imm with A=$ff
   (recorded in the 6502 note); whether that is the switch model's bus

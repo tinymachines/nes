@@ -31,12 +31,15 @@ ROMs, ten of eleven sprite_hit tests and five of ten ppu_vbl_nmi tests
 pass; the five that do not are one question, named in the report: the
 documented console's NMI reaches the CPU about two dots later than the
 two chips, held to their own measurements, allow, and a scope on the
-real board is what settles it. Six of eight apu_test ROMs fail on the
-frame sequencer's position after a $4017 write, carried to the 2a03 by
-name. Running real programs found seven misses in rung 3 (a seam bit,
-a shift carry, three bus-fight opcodes, and the interrupt sample point
-twice over) and four in the fast PPU, each now held by a fixture in
-its own repository.
+real board is what settles it. All eight apu_test ROMs pass, the six
+that had failed each measured on the switch-level 2A03 and authored
+(the $4017 write's parity jitter and immediate clock, the status read
+latched a half-step after the bus is asked, the IRQ flag's three-cycle
+set, the DMC's byte counted off where its read lands). Running real
+programs found eight misses in rung 3 (a seam bit, a shift carry,
+three bus-fight opcodes, the interrupt sample point twice over, and a
+read latched later than the bus is asked) and four in the fast PPU,
+each now held by a fixture in its own repository.
 
 N4 (the glue, authored) is closed (`docs/n4-report.md`): `nes-glue`
 is the NES-001 mainboard's handful of parts, each a few lines held to
