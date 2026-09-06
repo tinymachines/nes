@@ -151,7 +151,7 @@ there. Alignment 4,3 unless stated.
 | ppu_vbl_nmi 09 even_odd_frames | pass (00 01 01 02) |
 | ppu_vbl_nmi 10 even_odd_timing | fails #2 by one dot on the sync it takes from the race ("skipped too soon"); it passed under the race's earlier, fitted window |
 | sprite_hit_tests 01..07, 09..11 | **pass** (on screen) |
-| sprite_hit_tests 08 double_height | refused by name: the fast PPU does not model 8x16 sprites |
+| sprite_hit_tests 08 double_height | **pass** (2026-09-06; refused by name until the fast PPU's tall-sprite rule was measured on rung 0 and held, 2c02 `1dc887a`) |
 | apu_test 1..8 | **8 of 8 pass** (2026-09-06; six had failed on the first run) |
 
 The APU rows were N3's tables meeting a CPU-side oracle for the first
@@ -224,7 +224,6 @@ on the undriven bits), which is the plumbing and not the play.
   against M2 on a real NES-001, the one measurement that would move
   05, 06, 07, 08 and 10.
 - Gate 3, when a ROM is at hand.
-- 8x16 sprites in the fast PPU (sprite_hit 08).
 - The RES hold on the 2A03 core and $4015's reads, from N3.
 - Rung 0 differs from the part on ANC #imm and ASR #imm with A=$ff
   (recorded in the 6502 note); whether that is the switch model's bus

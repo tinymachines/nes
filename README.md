@@ -80,7 +80,9 @@ half-cycle; and the $2002 race, the console's reads under all
 twenty-four alignments against the table measured on the switch-level
 2C02 with the console's own access shape, set side and clear side.
 Gate 2 is recorded in full: cpu_timing_test, all sixteen instr_test
-ROMs, ten of eleven sprite_hit tests and five of ten ppu_vbl_nmi tests
+ROMs, all eleven sprite_hit tests (the double-height one since the
+fast PPU's 8x16 rule was measured on the switch-level chip) and five of
+ten ppu_vbl_nmi tests
 pass; the five that do not are one question, named in the report: the
 documented console's NMI reaches the CPU about two dots later than the
 two chips, held to their own measurements, allow, and a scope on the
