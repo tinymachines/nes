@@ -124,9 +124,9 @@ for selects up to L after the set (P2's reference protocol led by eight
 and showed eight; an M2-qualified select would lead by six). Two dots
 is sixteen, and the board wires no lead at all. So the question is
 what the PPU's /INT and the CPU's NMI pin do against M2 on a real
-NES-001, which is a scope on four lines (the sketch's section 5 gains
-the row); until it is taken the console holds the chips, and the four
-tests are named here as the measurement's stake.
+NES-001, which is a scope on four lines, a row for the sketch's section
+5; until it is taken the console holds the chips, and the five tests
+are named here as the measurement's stake.
 
 ## Gate 2: blargg, end to end
 
