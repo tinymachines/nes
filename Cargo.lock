@@ -87,6 +87,7 @@ dependencies = [
  "ntsc-grid 0.1.0 (git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.4)",
  "ntsc-source-cap",
  "ntsc-source-nes 0.1.0 (git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.4)",
+ "v2a03-dac",
  "v2a03-micro",
  "v2c02-fast",
  "v6502-micro",
@@ -330,6 +331,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
+name = "v2a03-dac"
+version = "0.1.0"
+
+[[package]]
 name = "v2a03-micro"
 version = "0.1.0"
 dependencies = [
@@ -352,6 +357,7 @@ version = "0.1.0"
 dependencies = [
  "halfphi 0.1.6 (git+https://github.com/tinymachines/halfphi?tag=v0.1.6)",
  "nes-bus",
+ "v2a03-dac",
  "v2a03-netlist",
  "v6502-pins",
 ]

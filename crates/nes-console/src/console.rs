@@ -70,6 +70,9 @@ pub struct Console {
     pub dots: u64,
     /// Completed pictures, oldest first; a shell drains them.
     pub frames: Vec<DotFrame>,
+    /// When Some, the APU's codes after every CPU half-cycle go through
+    /// the sound (N7); None costs nothing.
+    pub sound: Option<crate::sound::Sound>,
 }
 
 impl Console {
@@ -82,7 +85,7 @@ impl Console {
     pub fn with_prg_ram(cart: Box<dyn Cartridge>, chr_ram: Option<Vec<u8>>, alignment: Alignment, prg_ram: bool) -> Console {
         let board = Board::new(cart, chr_ram, prg_ram);
         let cpu = Rung::with_bus(Box::new(CpuBus(board.clone())), v2a03_micro::STACK_AT_H0_MEASURED);
-        Console { board, cpu, cpu_trace: None, alignment, master: 0, cpu_half_cycles: 0, dots: 0, frames: Vec::new() }
+        Console { board, cpu, cpu_trace: None, alignment, master: 0, cpu_half_cycles: 0, dots: 0, frames: Vec::new(), sound: None }
     }
 
     /// One master half-step: the PPU dot and the CPU half-cycle that
@@ -110,6 +113,9 @@ impl Console {
             self.cpu.set_inputs(true, !irq, !nmi, true, false);
             self.cpu.half_step();
             self.cpu_half_cycles += 1;
+            if let Some(s) = self.sound.as_mut() {
+                s.push(self.cpu.apu.borrow().codes());
+            }
             if let Some(t) = self.cpu_trace.as_mut() {
                 t.push(CpuStep { master: m, nmi, irq, frame: self.cpu.pins() });
             }

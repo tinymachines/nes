@@ -16,6 +16,22 @@ anything.
 
 ## Status
 
+N7 (the sound) has its machine half closed (`docs/n7-report.md`):
+`Sound` takes the 2A03's five output codes after every CPU half-cycle
+through the two DACs (the nesdev table, now `v2a03-dac`) and the
+NES-001's audio stage read off the schematic (the 100 ohm pulldowns,
+the 20K and 12K summing resistors the table's two constants already
+carry, C23 into the 74HC04 inverter with R6 and C21 around it:
+a high-pass at 21 Hz, a gain of 2.35 inverted, a low-pass at 15 kHz),
+resampled to 48 kHz. Held to the schematic's arithmetic and to
+blargg's four mixer ROMs cancelling through the whole console within
+5 percent of the beep (the linear approximation is red at 34), with
+his real-hardware recordings measured the same way beside: triangle
+and noise agree with the console to a fraction of a percent, square
+and dmc carry twice the console's residual, which is the real DAC
+curves' question for the scope. The AUDIO_OUT record is the bench
+item.
+
 N6 (the picture) has step 1 closed and step 2's machine half recorded
 (`docs/n6-report.md`): `Picture` takes the console's frames in order
 through ntsc-crt's NES source, Rung C and the CRT stages, the
@@ -85,7 +101,12 @@ cargo test --workspace            # every part against its datasheet,
                                   # every alignment, the picture (a
                                   # frame through ntsc-crt equal to the
                                   # rung's own, the phase across the
-                                  # parity sequence; MUTATE=1 red)
+                                  # parity sequence; MUTATE=1 red), the
+                                  # sound (the stage's arithmetic,
+                                  # blargg's mixer ROMs cancelling, his
+                                  # recordings beside; MUTATE_SOUND=1
+                                  # red, its own variable because the
+                                  # 2A03 rung reads MUTATE itself)
 cargo run --release -p nes-console --example run-rom -- rom.nes [frames] [out.ppm]
                                   # a NROM ROM through the console: the
                                   # last frame as PPM, the rate, and
@@ -93,7 +114,8 @@ cargo run --release -p nes-console --example run-rom -- rom.nes [frames] [out.pp
                                   # ALIGN=cpu,ppu picks another power-on
                                   # alignment; CRT=out.ppm the picture
                                   # through Rung C and the CRT stages,
-                                  # DECODED=out.ppm the decoded grid
+                                  # DECODED=out.ppm the decoded grid;
+                                  # WAV=out.wav the sound at 48 kHz
 cargo run --release -p nes-console --example capture-score -- rom.nes [frames] [record.u8 rate]
                                   # the capture path: the ROM's frames
                                   # through the card model (or a real

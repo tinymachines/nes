@@ -4,7 +4,9 @@
 //!
 //!   cargo run --release -p nes-console --example run-rom -- game.nes 120 out.ppm
 //!
-//! CRT=out.ppm writes the picture instead: every frame through
+//! WAV=out.wav writes the sound: the APU through the DACs, the NES-001
+//! stage and the resampler, 48 kHz 16-bit mono at a fixed listening
+//! level. CRT=out.ppm writes the picture instead: every frame through
 //! `Picture` (ntsc-crt's NES source, Rung C, the CRT stages), the last
 //! one displayed. DECODED=out.ppm writes the last decoded grid (2048 x
 //! 240, no CRT) beside it.
@@ -40,9 +42,18 @@ fn main() {
         Err(_) => Alignment::default(),
     };
     let mut c = Console::with_prg_ram(Box::new(cart), chr_ram, alignment, true);
+    let wav_out = std::env::var("WAV").ok();
+    if wav_out.is_some() {
+        c.sound = Some(nes_console::Sound::default());
+    }
     let t = std::time::Instant::now();
     c.run_frames(frames);
     let dt = t.elapsed().as_secs_f64();
+    if let (Some(path), Some(s)) = (&wav_out, &c.sound) {
+        std::fs::write(path, s.wav(0.25)).unwrap();
+        let peak = s.out.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        println!("sound: {} code samples at {}/{} Hz, {} output samples at {} Hz, peak {peak:.4} table units x gain; wrote {path}", s.samples, nes_console::sound::RATE_NUM, nes_console::sound::RATE_DEN, s.out.len(), nes_console::sound::OUT_RATE);
+    }
     let crt_out = std::env::var("CRT").ok();
     let decoded_out = std::env::var("DECODED").ok();
     if crt_out.is_some() || decoded_out.is_some() {

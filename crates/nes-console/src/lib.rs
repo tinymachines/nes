@@ -22,8 +22,10 @@ pub mod board;
 pub mod console;
 pub mod ines;
 pub mod picture;
+pub mod sound;
 pub mod testrom;
 
 pub use board::Board;
 pub use console::{Alignment, Console, CpuStep};
 pub use picture::{Picture, Shown};
+pub use sound::{Mixer, Sound};
