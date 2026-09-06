@@ -3,7 +3,7 @@ name = "nes-shell"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "The console in a window: the picture's decode and CRT stages on the GPU, held to ntsc-crt's CPU chain; wall-clock pacing with the drift policy; the keyboard as controller 1; audio out. The one crate here with registry dependencies, and nothing else depends on it."
+description = "The console in a window: the picture's decode and CRT stages on the GPU, held to ntsc-crt's CPU chain; wall-clock pacing with the drift policy; the keyboard and a gamepad as controller 1; audio out. The one crate here with registry dependencies, and nothing else depends on it."
 repository = "https://github.com/tinymachines/nes"
 
 [dependencies]
@@ -19,6 +19,7 @@ wgpu = "22.1"
 pollster = "0.3"
 winit = "0.30"
 cpal = "0.15"
+gilrs = "0.11"
 
 [[bin]]
 name = "nes-shell"

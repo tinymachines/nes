@@ -3,7 +3,7 @@
 Run stamp: 2026-09-06, rustc 1.97.1, wgpu 22.1, winit 0.30, cpal 0.15,
 wasm-pack 0.13 under node 24. Pins as N7's, ntsc-crt v0.2.4. `cargo
 test -p nes-shell`: 3 tests (the GPU picture, the paced loop, the
-ring). Plan: `docs/n8-plan.md`, written first.
+ring), 8 with the addendum's pad tests. Plan: `docs/n8-plan.md`, written first.
 
 The console has a shell: a Linux binary that puts the picture in a
 window with the decode and the CRT stages on the GPU, the console
@@ -106,4 +106,24 @@ is the roof's item.
 - A speaker: the ring's underrun counter at zero over a session.
 - A hand on the keyboard, and gate 3's cartridge, which is also where
   N5's play gate closes.
-- A gamepad (gilrs) and the wasm page in the roof.
+- The wasm page in the roof (since built: `/nes/play`).
+- A gamepad in hand: the mapping below ran without one.
+
+## Addendum, 2026-09-06: a gamepad beside the keyboard
+
+`nes_shell::pad` (gilrs 0.11) drains the pad's events each redraw
+into a `Buttons` the window ORs with the keyboard's before the console
+thread reads it. The layout is positional against the NES pad: the
+east and north face buttons are A, the south and west are B, Start
+and Select and the D-pad by name, the left stick past half deflection
+on either axis as a direction (the same edge both ways, and a stick
+that has not crossed the edge writes nothing, so it cannot undo a held
+D-pad). No pad, or no enumerator, is not an error: the keyboard still
+plays and the reason prints once. Gate (`tests/pad.rs`, 5 tests, no
+pad): the layout table including what maps to nothing, the stick's
+edge both ways on both axes and the right stick and triggers ignored,
+the D-pad surviving stick noise, the OR, and `Pad::open` on this box
+(the enumerator opens, no pad sends an event). The window's smoke run
+under the virtual display is unchanged with the module in: 90 redraws,
+88 new frames, 0 underrun samples, 0 gamepads. What a real pad feels
+like, and whether east-is-A is the thumb's choice, is the desk's.

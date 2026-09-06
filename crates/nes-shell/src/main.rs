@@ -7,7 +7,8 @@
 //! to the CPU chain), then blitted to a wgpu surface on a winit window
 //! at integer scale 3. Audio through cpal at 48 kHz from the ring the
 //! loop fills. The keyboard is controller 1: arrows, Z and X for B and
-//! A, Enter for Start, right Shift for Select, Escape to quit. On exit
+//! A, Enter for Start, right Shift for Select, Escape to quit; a gamepad
+//! through gilrs is ORed with it (`pad`). On exit
 //! the counters print: frames presented, duplicated, dropped, audio
 //! underruns. NES_SHELL_TICKS=n exits after n display ticks (the
 //! smoke run under a virtual display).
@@ -15,6 +16,7 @@
 use nes_console::{ines, Alignment, Console, Picture};
 use nes_glue::controller::Buttons;
 use nes_shell::gpu::GpuPicture;
+use nes_shell::pad::{merge, Pad};
 use nes_shell::run::Handle;
 use ntsc_crt::CrtParams;
 use ntsc_decode::Decoder;
@@ -40,6 +42,7 @@ struct State {
     encoder: Picture,
     run: Handle,
     buttons: Buttons,
+    pad: Pad,
     presented: u64,
     shown_seq: u64,
     shown: u64,
@@ -170,7 +173,7 @@ impl ApplicationHandler for App {
         }
         eprintln!("nes-shell: running on {}", gpu.adapter_name);
         let period = std::time::Duration::from_nanos(nes_shell::run::period_ns());
-        self.state = Some(State { window, surface, config, gpu, blit, blit_bind, blit_params, encoder: Picture::decode_only(), run, buttons: Buttons::default(), presented: 0, shown_seq: 0, shown: 0, next_redraw: std::time::Instant::now(), period, _stream: stream });
+        self.state = Some(State { window, surface, config, gpu, blit, blit_bind, blit_params, encoder: Picture::decode_only(), run, buttons: Buttons::default(), pad: Pad::open(), presented: 0, shown_seq: 0, shown: 0, next_redraw: std::time::Instant::now(), period, _stream: stream });
         el.set_control_flow(ControlFlow::Poll);
         self.state.as_ref().unwrap().window.request_redraw();
     }
@@ -193,7 +196,7 @@ impl ApplicationHandler for App {
                     KeyCode::ShiftRight => s.buttons.select = down,
                     _ => {}
                 }
-                *s.run.buttons.lock().unwrap() = s.buttons;
+                *s.run.buttons.lock().unwrap() = merge(s.buttons, s.pad.buttons);
             }
             WindowEvent::Resized(size) => {
                 s.config.width = size.width.max(1);
@@ -213,6 +216,8 @@ impl ApplicationHandler for App {
                     }
                 }
                 s.presented += 1;
+                let pad = s.pad.poll();
+                *s.run.buttons.lock().unwrap() = merge(s.buttons, pad);
                 // The newest frame the console published, if it is new.
                 let fresh = {
                     let latest = s.run.latest.lock().unwrap();
@@ -282,6 +287,7 @@ impl ApplicationHandler for App {
                 "nes-shell: console {} periods, {} idle, {} dropped, {} frames run; display {} redraws, {} new frames shown; {} audio underrun samples",
                 st.presented, st.duplicated, st.dropped, frames_run, s.presented, s.shown, under
             );
+            eprintln!("nes-shell: {} gamepad(s) sent events", s.pad.seen.len());
         }
     }
 }

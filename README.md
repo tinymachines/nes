@@ -24,8 +24,8 @@ component of every pixel (worst 4.8e-7 with the authored parameters,
 2.8e-5 with the mask and geometry on, against 1e-3 stated; about a
 millisecond a frame where the CPU took 83); the console on its own
 thread paced by the wall clock through ntsc-wasm's drift policy,
-duplicates and drops counted; the sound through cpal; the keyboard as
-controller 1. It ran under a virtual display here. `nes-wasm` is the
+duplicates and drops counted; the sound through cpal; the keyboard and
+a gamepad (gilrs) as controller 1. It ran under a virtual display here. `nes-wasm` is the
 browser target: the console with its sound behind wasm-bindgen, 91
 frames a second under node. The desk items are the real display, a
 speaker and a hand.
