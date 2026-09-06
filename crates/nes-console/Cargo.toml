@@ -20,5 +20,5 @@ nes-bus = { git = "https://github.com/tinymachines/nes-bus", tag = "v0.1.1" }
 nes-glue = { path = "../nes-glue" }
 v2a03-micro = { path = "../../../2a03/crates/v2a03-micro" }
 v2c02-fast = { path = "../../../2c02/crates/v2c02-fast" }
-v6502-micro = { git = "https://github.com/tinymachines/6502", package = "v6502-micro", rev = "5f169ab" }
-v6502-pins = { git = "https://github.com/tinymachines/6502", package = "v6502-pins", rev = "5f169ab" }
+v6502-micro = { git = "https://github.com/tinymachines/6502", package = "v6502-micro", rev = "9c177cd" }
+v6502-pins = { git = "https://github.com/tinymachines/6502", package = "v6502-pins", rev = "9c177cd" }

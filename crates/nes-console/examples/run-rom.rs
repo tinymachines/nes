@@ -25,7 +25,16 @@ fn main() {
     let rom = ines::parse(&bytes).expect("iNES");
     let chr_ram = rom.chr_ram.then(|| vec![0u8; 0x2000]);
     let cart = rom.nrom().expect("NROM");
-    let mut c = Console::with_prg_ram(Box::new(cart), chr_ram, Alignment::default(), true);
+    // ALIGN=cpu,ppu picks a power-on alignment other than the measured
+    // one (the sketch's set: the dividers can start in any).
+    let alignment = match std::env::var("ALIGN") {
+        Ok(v) => {
+            let (c, p) = v.split_once(',').expect("ALIGN=cpu,ppu");
+            Alignment { cpu_phase: c.parse().unwrap(), ppu_phase: p.parse().unwrap() }
+        }
+        Err(_) => Alignment::default(),
+    };
+    let mut c = Console::with_prg_ram(Box::new(cart), chr_ram, alignment, true);
     let t = std::time::Instant::now();
     c.run_frames(frames);
     let dt = t.elapsed().as_secs_f64();

@@ -16,6 +16,22 @@ anything.
 
 ## Status
 
+N5 (the console) is in progress (`docs/n5-report.md`): `nes-console`
+runs the 2A03 core on rung 3 and the 2C02 on the fast rung on one
+master half-step counter through the glue, at the alignment measured
+off the two switch-level chips' own dividers, 2.1x to 2.3x real time.
+Gate 2 is recorded in full: cpu_timing_test, all sixteen instr_test
+ROMs, ten of eleven sprite_hit tests and five of ten ppu_vbl_nmi tests
+pass; the remaining five are one dot off and named, two of them the
+alignment (one passes on another phase), three the clear-side race the
+fast PPU does not model; six of eight apu_test ROMs fail on the frame
+sequencer's position after a $4017 write, carried to the 2a03 by name.
+Gate 1's plumbing is held and its two replays are not yet run; gate 3
+has no ROM. Running real programs found four misses in rung 3 (a seam
+bit, a shift carry, three bus-fight opcodes, the NMI edge in a final
+cycle) and four in the fast PPU, each now held by a fixture in its own
+repository.
+
 N4 (the glue, authored) is closed (`docs/n4-report.md`): `nes-glue`
 is the NES-001 mainboard's handful of parts, each a few lines held to
 its datasheet with its own test and labelled authored, nothing through
@@ -34,8 +50,23 @@ it. 16 tests.
 ## Commands
 
 ```bash
-cargo test --workspace            # every part against its datasheet
+cargo test --workspace            # every part against its datasheet,
+                                  # and the console's plumbing
+cargo run --release -p nes-console --example run-rom -- rom.nes [frames] [out.ppm]
+                                  # a NROM ROM through the console: the
+                                  # last frame as PPM, the rate, and
+                                  # blargg's $6000 report if there is one;
+                                  # ALIGN=cpu,ppu picks another power-on
+                                  # alignment
+cargo run --release -p nes-console --example trace-cpu -- rom.nes
+cargo run --release -p nes-console --example flat-cpu -- rom.nes <half-cycles>
+                                  # the instruments: the CPU's bus through
+                                  # the console, and rung 3 alone on a flat
+                                  # image of the same ROM
 ```
+
+ROMs are never committed; blargg's tests are read from a checkout of
+the nes-test-roms collection.
 
 ## Licensing
 
