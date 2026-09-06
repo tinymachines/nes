@@ -3,6 +3,11 @@
 //! look, not a measurement: the family's real path is ntsc-crt, N6).
 //!
 //!   cargo run --release -p nes-console --example run-rom -- game.nes 120 out.ppm
+//!
+//! CRT=out.ppm writes the picture instead: every frame through
+//! `Picture` (ntsc-crt's NES source, Rung C, the CRT stages), the last
+//! one displayed. DECODED=out.ppm writes the last decoded grid (2048 x
+//! 240, no CRT) beside it.
 
 use std::io::Write as _;
 
@@ -38,6 +43,27 @@ fn main() {
     let t = std::time::Instant::now();
     c.run_frames(frames);
     let dt = t.elapsed().as_secs_f64();
+    let crt_out = std::env::var("CRT").ok();
+    let decoded_out = std::env::var("DECODED").ok();
+    if crt_out.is_some() || decoded_out.is_some() {
+        let t = std::time::Instant::now();
+        let mut picture = if crt_out.is_some() { nes_console::Picture::new() } else { nes_console::Picture::decode_only() };
+        let mut last = None;
+        for f in &c.frames {
+            last = Some(picture.push(f));
+        }
+        let shown = last.expect("no frames");
+        let dt = t.elapsed().as_secs_f64();
+        if let Some(path) = &crt_out {
+            let d = shown.displayed.as_ref().unwrap();
+            std::fs::write(path, nes_console::picture::display_ppm(d)).unwrap();
+            println!("picture: {} frames through Rung C and the CRT stages in {dt:.2} s ({:.1} frames/s), phase left {}; wrote {path} ({}x{})", c.frames.len(), c.frames.len() as f64 / dt, picture.origin().get(), d.width, d.height);
+        }
+        if let Some(path) = &decoded_out {
+            std::fs::write(path, nes_console::picture::decoded_ppm(&shown.decoded)).unwrap();
+            println!("decoded grid: wrote {path} ({}x{})", shown.decoded.width, shown.decoded.height);
+        }
+    }
     let f = c.frames.last().unwrap();
     let mut ppm = Vec::new();
     write!(ppm, "P6\n256 240\n255\n").unwrap();

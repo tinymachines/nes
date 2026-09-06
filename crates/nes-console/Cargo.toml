@@ -23,6 +23,14 @@ v2c02-fast = { path = "../../../2c02/crates/v2c02-fast" }
 v6502-micro = { git = "https://github.com/tinymachines/6502", package = "v6502-micro", rev = "8b9e0b5" }
 v6502-pins = { git = "https://github.com/tinymachines/6502", package = "v6502-pins", rev = "8b9e0b5" }
 
+# The picture (N6): the frames through ntsc-crt's NES source, the
+# three-line comb and the CRT stages, pinned by tag. Its nes-bus is the
+# tag above, so the console's DotFrame is the encoder's.
+ntsc-grid = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.3" }
+ntsc-source-nes = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.3" }
+ntsc-decode = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.3" }
+ntsc-crt = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.3" }
+
 # Gate 1's oracle: the switch-level 6502 (rung 0) driven with the NMI
 # timing the console's PPU produced, at the same revision as the rungs
 # above, so there is one v6502-pins frame type in the tree.
