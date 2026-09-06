@@ -162,8 +162,8 @@ impl Board {
             }
         } else if a < 0x4020 {
             // The 2A03's registers: the Rung takes them from its own frames.
-        } else if (0x6000..0x8000).contains(&a) && self.prg_ram.is_some() {
-            self.prg_ram.as_mut().unwrap()[(a - 0x6000) as usize] = v;
+        } else if let (true, Some(ram)) = ((0x6000..0x8000).contains(&a), self.prg_ram.as_mut()) {
+            ram[(a - 0x6000) as usize] = v;
         } else {
             self.cart.borrow_mut().cart.cpu_write(a, v);
         }

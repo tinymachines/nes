@@ -35,10 +35,13 @@ fn frames_come_out_one_per_ppu_frame_and_the_nmi_counts_them() {
     assert_eq!(c.dots, 6 * dots_per_frame - short, "one frame is one full traversal of the table, less the skipped dot");
     assert_eq!(c.master, (c.dots - 1) * 8 + c.alignment.ppu_phase as u64 + 1, "the master counter is eight per dot (master {} dots {})", c.master, c.dots);
     let nmis = c.board.borrow().wram.read(0x0000);
-    // NMI on from the program's setup (a few thousand cycles in), so
-    // every frame after the first has one; the exact count is measured
-    // and must be within one of the frames seen.
-    assert!((4..=6).contains(&nmis), "NMIs counted in RAM: {nmis} over 6 frames");
+    // NMI on from the program's setup (two vblank waits and the
+    // nametable fill in), so every frame after has one. A BIT $2002
+    // polling wait can lose a vblank to the read race (the fast PPU's
+    // measured window, 2c02 tests/race.rs), which costs the setup a
+    // frame; the count is measured and must be within that of the
+    // frames seen.
+    assert!((3..=6).contains(&nmis), "NMIs counted in RAM: {nmis} over 6 frames");
     eprintln!("6 frames, {} master half-steps, {} CPU half-cycles, {nmis} NMIs counted by the program", c.master, c.cpu_half_cycles);
 }
 

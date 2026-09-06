@@ -16,21 +16,27 @@ anything.
 
 ## Status
 
-N5 (the console) is in progress (`docs/n5-report.md`): `nes-console`
-runs the 2A03 core on rung 3 and the 2C02 on the fast rung on one
-master half-step counter through the glue, at the alignment measured
-off the two switch-level chips' own dividers, 2.1x to 2.3x real time.
+N5 (the console) has gates 1 and 2 recorded and gate 3 open
+(`docs/n5-report.md`): `nes-console` runs the 2A03 core on rung 3 and
+the 2C02 on the fast rung on one master half-step counter through the
+glue, at the alignment measured off the two switch-level chips' own
+dividers, 2.1x to 2.3x real time. Gate 1 holds three ways: the
+plumbing; the PPU's real NMI landing around a BRK at eight offsets,
+the console's CPU against the switch-level 6502 half-cycle for
+half-cycle; and the $2002 race, the console's reads under all
+twenty-four alignments against the table measured on the switch-level
+2C02 with the console's own access shape, set side and clear side.
 Gate 2 is recorded in full: cpu_timing_test, all sixteen instr_test
 ROMs, ten of eleven sprite_hit tests and five of ten ppu_vbl_nmi tests
-pass; the remaining five are one dot off and named, two of them the
-alignment (one passes on another phase), three the clear-side race the
-fast PPU does not model; six of eight apu_test ROMs fail on the frame
-sequencer's position after a $4017 write, carried to the 2a03 by name.
-Gate 1's plumbing is held and its two replays are not yet run; gate 3
-has no ROM. Running real programs found four misses in rung 3 (a seam
-bit, a shift carry, three bus-fight opcodes, the NMI edge in a final
-cycle) and four in the fast PPU, each now held by a fixture in its own
-repository.
+pass; the five that do not are one question, named in the report: the
+documented console's NMI reaches the CPU about two dots later than the
+two chips, held to their own measurements, allow, and a scope on the
+real board is what settles it. Six of eight apu_test ROMs fail on the
+frame sequencer's position after a $4017 write, carried to the 2a03 by
+name. Running real programs found seven misses in rung 3 (a seam bit,
+a shift carry, three bus-fight opcodes, and the interrupt sample point
+twice over) and four in the fast PPU, each now held by a fixture in
+its own repository.
 
 N4 (the glue, authored) is closed (`docs/n4-report.md`): `nes-glue`
 is the NES-001 mainboard's handful of parts, each a few lines held to
@@ -51,7 +57,11 @@ it. 16 tests.
 
 ```bash
 cargo test --workspace            # every part against its datasheet,
-                                  # and the console's plumbing
+                                  # and the console's three gates: the
+                                  # plumbing, the NMI replay against the
+                                  # switch-level 6502 (a dev-dependency,
+                                  # git-pinned), the race replay under
+                                  # every alignment
 cargo run --release -p nes-console --example run-rom -- rom.nes [frames] [out.ppm]
                                   # a NROM ROM through the console: the
                                   # last frame as PPM, the rate, and

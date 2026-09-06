@@ -1,15 +1,17 @@
-# N5 report: the console, gate 2 recorded, gates 1 and 3 open
+# N5 report: the console, gates 1 and 2 recorded, gate 3 open
 
-Run stamp: 2026-09-05, rustc 1.97.1. Pins: 6502 `9c177cd` (v6502-micro,
-v6502-pins), 2a03 `ac098d0` (v2a03-micro by path), 2c02 `3a48687`
-(v2c02-fast by path), nes-bus v0.1.1, nes-glue from N4. Alignment
-stamp: `Alignment::MEASURED`, cpu_phase 4, ppu_phase 3. Throughput:
-125 to 140 frames a second on one core, 2.1x to 2.3x real time, the
-CPU on rung 3 and the PPU on the fast rung. `cargo test -p nes-console`:
-3 tests. This crate is `crates/nes-console`.
+Run stamp: 2026-09-05, rustc 1.97.1. Pins: 6502 `0c239cc` (v6502-micro,
+v6502-pins, v6502-sim as the gate's oracle), 2a03 `0e6fc4e` (v2a03-micro
+by path), 2c02 `474b7e7` (v2c02-fast by path), nes-bus v0.1.1, nes-glue
+from N4. Alignment stamp: `Alignment::MEASURED`, cpu_phase 4, ppu_phase
+3. Throughput: 125 to 140 frames a second on one core, 2.1x to 2.3x
+real time, the CPU on rung 3 and the PPU on the fast rung. `cargo test
+-p nes-console`: 6 tests (the plumbing, the NMI replay, the race replay
+both sides). This crate is `crates/nes-console`.
 
-N5 is not closed. Gate 2 is recorded in full below; gate 1 has its
-plumbing held and its two named replays not yet run; gate 3 has no ROM.
+Gate 1 is closed: both replays run through the console and hold. Gate 2
+is recorded in full below, and the misses it leaves are one question,
+named at the end of gate 1. Gate 3 has no ROM.
 
 ## The scheduler
 
@@ -21,11 +23,12 @@ switch-level chips' own dividers, each stepped on the master clock from
 the last pulse of its reset: the 2A03's clk0 changes on master
 half-steps 4, 16, 28 (`2a03: v2a03-sim/examples/clk-phase.rs`) and the
 2C02's pclk0 rises on 3, 11, 19 (`2c02: v2c02-sim/examples/clk-phase.rs`).
-That is one of the four alignments the dividers can power up in (the
-CPU's half-cycle start visits two of a dot's eight half-steps, so the
-classes are cpu_phase 4, 5, 6 and 7 against ppu_phase 3); a console
-records the one it ran in this stamp, and `run-rom` takes `ALIGN=cpu,ppu`
-to run another. Wall-clock pacing is not built: the console runs as
+That is one of the alignments the dividers can power up in: a CPU read
+begins on a phi1, which recurs every twenty-four master half-steps, so
+against the dot's eight there are twenty-four classes, `cpu_phase` 0 to
+23 with `ppu_phase` 3 (a first draft counted four, having taken the
+half-cycle grid for the phi1 grid). A console records the one it ran in
+this stamp, and `run-rom` takes `ALIGN=cpu,ppu` to run another. Wall-clock pacing is not built: the console runs as
 fast as it can and reports the rate.
 
 The board (`board.rs`) routes every CPU access through nes-glue's
@@ -40,48 +43,90 @@ the cartridge's own CIRAM A10.
 
 ## Gate 1: the alignment
 
-Held: `tests/plumbing.rs` runs six frames of the test cartridge
+Held three ways, each a test in `crates/nes-console/tests`.
+
+**The plumbing** (`plumbing.rs`): six frames of the test cartridge
 (`testrom.rs`: a program that waits two vblanks, paints four rows, and
-counts NMIs in RAM) and asserts that the master counter is eight per
-dot from the PPU phase, that each odd frame with rendering on is one
-dot short and says so in its parity, that the picture equals the fast
-PPU's standalone frame on the same world, and that the NMI count is
-one per frame. So the two chips are on one clock at the measured
-phases, and the seam does not lose or duplicate a dot.
+counts NMIs in RAM); the master counter is eight per dot from the PPU
+phase, each odd frame with rendering on is one dot short and says so in
+its parity, the picture equals the fast PPU's standalone frame on the
+same world, and the NMI count in RAM is one a frame (less one where a
+polling wait lost a vblank to the race, which is the race doing what
+the chip does).
 
-Not yet run, and named as such: the NMI-during-BRK halfscore and the
-P2 VBL race trace replayed through the console at their standalone
-half-cycle positions. What the console does instead is stamp each
-$2002 read with the half-step within the dot at which the CPU's phi1
-began, and the fast PPU decides the race from that against P2's fitted
-window (`race::CONSUME_FROM = -9`, `SUPPRESS_FROM = -21` half-steps).
-Two things blargg's timing tests then showed, both alignment-shaped
-and both still open:
+**The NMI-during-BRK replay** (`gate1_nmi.rs`): the PPU's first vblank
+asserts /NMI at a master half-step the program cannot move; a sled of
+known length puts a BRK's fetch at a chosen half-cycle from that edge,
+eight offsets a cycle apart from thirteen half-cycles before the edge to
+one after, so the edge falls in every cycle of the BRK and the ones
+before it. The console logs every CPU half-cycle's inputs and pin
+frame; rung 0 (the switch-level 6502, `v6502-sim`, a dev-dependency at
+the same pin) runs the same bytes on the console's own power-on RAM
+image with /NMI driven low from the half-cycle the console saw it, and
+the two pin traces agree at every half-cycle from thirty before the
+BRK's fetch to ninety after: the vector taken, the pushes, the timing.
+The stack page is compared with the two cores' power-on stack pointers'
+difference removed, derived from the first push each makes; the data
+byte is skipped in a write's phi1 (the 2A03 lockstep's named class). 960
+half-cycles, eight offsets, exact.
 
-- **The set-side race depends on the alignment, as the readme says it
-  does on a real NES** ("after some resets this is - -"). 02-vbl_set_time
-  fails on cpu_phase 4, 5 and 6 with row 03 reading `- -` where the
-  documented alignment reads `- V`, and passes on cpu_phase 7. On 7,
-  06-suppression's suppressed row moves to 04 as documented, and
-  08-nmi_off_timing's first N moves from 04 to 05 (documented: 07).
-- **The clear side does not move with the alignment.** 03-vbl_clear_time
-  reads V one dot past the documented row on all four phases, and
-  07-nmi_on_timing stops firing one dot before the documented row on
-  all four. The fast PPU's timed read models the race at the set only;
-  a read or a write landing in the dot before the clear at (261, 1) is
-  served the stale flag. And after the set, the window in which the
-  flag reads back set but no NMI follows is one dot here and two on
-  the documented hardware (06 rows 05 and 06).
+It did not pass the first time, and that was the point of running it.
+With the edge inside the BRK's vector reads, rung 3 hijacked the
+handler's first fetch where rung 0 let the handler's first instruction
+run. `brk-nmi-probe` (6502) then measured both rungs at every half-cycle
+around a NOP and a BRK, edge and level, with pulses down to one
+half-cycle, and rung 3 was authored to what rung 0 does: an input
+present as a cycle's phi1 begins is taken at the coming fetch, the
+final cycle's included, and one arriving in its phi2 waits; the NMI
+edge is two phi1 samples compared, so a low confined to a phi2 is not
+an edge; a BRK whose edge is sampled by its fifth cycle's phi1 takes the
+NMI's vector, and every BRK ends without a poll. Seven scripted traces
+joined the 6502's golden on both sides of each seam. The 2A03's own
+pad was then timed at the master clock (`nmi-latency-probe`, 2a03): a
+low arriving one master pulse before the final phi1 begins is taken,
+one arriving on that pulse waits, and nothing else is in the path.
 
-The question underneath is the meaning of "read start". P2's harness
-applied the reference's 24-edge protocol: the address at edge 24, chip
-select low eight half-steps later, the byte sampled at edge 1; its
-offsets are from the address. On the NES-001 the PPU's chip select is
-the 74LS139's decode of the address alone, /RD and /WR are M2 gated,
-and the CPU samples at M2's fall. Which of those edges the 2C02's race
-keys off is a measurement on the switch-level 2C02 with the console's
-access shape, not a reading; until it is made the console stamps the
-phi1 start and says so here.
+**The race replay** (`gate1_race.rs`): the table measured on the
+switch-level 2C02 with the console's access shape is the oracle
+(`race-shape-probe`, 2c02: the register address, R/W and /CS applied
+together at the CPU's phi1, as the 74LS139 decodes them, the byte taken
+at the eleventh half-step; every half-step from forty-eight before each
+event to twenty-four after, from one saved chip state). Against the
+first half-step of the set's dot (vpos 241, hpos 1; the flag and /INT
+rise on the dot boundary), a read starting eight or more half-steps
+before misses, one starting one to seven before suppresses the set, one
+starting on the dot or later consumes it; against the clear's dot (vpos
+261, hpos 1), a read on it or later reads clear, one before reads set.
+The fast PPU holds that table in its own test; the console test holds
+the console to it: a polling program whose loop alternates cycle parity
+walks its reads across the set, and a program that reads once a frame a
+computed delay after the NMI, placed within half a cycle of the clear,
+walks the clear; both run under all twenty-four alignments, and every
+read that starts within five dots of an event must read what the chip
+reads there and leave the NMI as the chip leaves it. 145 reads around
+the set, 185 around the clear, every half-step of both windows covered,
+every outcome the chip's.
+
+**What the two chips together do not explain.** With the race and the
+NMI both held to the switch-level chips, blargg's 02-vbl_set_time and
+03-vbl_clear_time pass on the measured alignment, and four of his
+timing tests still sit one or two dots from the documented console:
+05-nmi_timing and 10-even_odd_timing by one dot on a sync the ROM takes
+from the race, 07-nmi_on_timing and 08-nmi_off_timing by two, and
+06-suppression's two rows where the documented console reads the flag
+set and takes no NMI. Every one of them says the same thing: the
+documented console's NMI reaches the CPU about two dots later than a
+PPU whose /INT falls with the flag, into a CPU that samples it at phi1
+with one master pulse of setup, allows. The probe found what would
+make such a window in the chip: a read whose address leads its select
+by L half-steps reads the flag set, clears it, and /INT never falls,
+for selects up to L after the set (P2's reference protocol led by eight
+and showed eight; an M2-qualified select would lead by six). Two dots
+is sixteen, and the board wires no lead at all. So the question is
+what the PPU's /INT and the CPU's NMI pin do against M2 on a real
+NES-001, which is a scope on four lines (the sketch's section 5 gains
+the row); until it is taken the console holds the chips, and the four
+tests are named here as the measurement's stake.
 
 ## Gate 2: blargg, end to end
 
@@ -96,15 +141,15 @@ there. Alignment 4,3 unless stated.
 | cpu_timing_test6 | **PASSED** (on screen, official instructions) |
 | instr_test-v5 01..16 | **16 of 16 pass** |
 | ppu_vbl_nmi 01 vbl_basics | pass |
-| ppu_vbl_nmi 02 vbl_set_time | fails on 4,3 (row 03 `- -`); **passes on 7,3** |
-| ppu_vbl_nmi 03 vbl_clear_time | fails: V through row 06, documented through 05; every alignment |
+| ppu_vbl_nmi 02 vbl_set_time | **pass** (with the race measured under the console's shape) |
+| ppu_vbl_nmi 03 vbl_clear_time | **pass** |
 | ppu_vbl_nmi 04 nmi_control | pass (#11 needed the NMI edge rule below) |
-| ppu_vbl_nmi 05 nmi_timing | pass |
-| ppu_vbl_nmi 06 suppression | fails: on 4,3 rows 03 and 04 suppressed (documented: 04 alone); on 7,3 row 04 alone but the no-NMI window is row 05 alone (documented: 05 and 06) |
-| ppu_vbl_nmi 07 nmi_on_timing | fails: N through row 03, documented through 04; every alignment |
-| ppu_vbl_nmi 08 nmi_off_timing | fails: N from row 04 (7,3: 05), documented from 07 |
+| ppu_vbl_nmi 05 nmi_timing | fails by one dot: row 01 reads 3 where the documented console reads 4 (the NMI question, gate 1) |
+| ppu_vbl_nmi 06 suppression | fails: rows 05 and 06 read `V N` where the documented console reads `V -` (the NMI question) |
+| ppu_vbl_nmi 07 nmi_on_timing | fails by two dots: N through row 02, documented through 04 (the NMI question) |
+| ppu_vbl_nmi 08 nmi_off_timing | fails by two dots: N from row 05, documented from 07 (the NMI question) |
 | ppu_vbl_nmi 09 even_odd_frames | pass (00 01 01 02) |
-| ppu_vbl_nmi 10 even_odd_timing | pass (08 08 09 07) |
+| ppu_vbl_nmi 10 even_odd_timing | fails #2 by one dot on the sync it takes from the race ("skipped too soon"); it passed under the race's earlier, fitted window |
 | sprite_hit_tests 01..07, 09..11 | **pass** (on screen) |
 | sprite_hit_tests 08 double_height | refused by name: the fast PPU does not model 8x16 sprites |
 | apu_test 3 irq_flag, 8 dmc_rates | pass |
@@ -166,9 +211,9 @@ on the undriven bits), which is the plumbing and not the play.
 
 ## Carried
 
-- Gate 1's two replays (the NMI-during-BRK halfscore, the P2 race trace)
-  through the console; the read-start measurement above; the clear-side
-  race and the two-dot no-NMI window in the fast PPU.
+- The NMI question at the end of gate 1: /INT and the CPU's NMI pin
+  against M2 on a real NES-001, the one measurement that would move
+  05, 06, 07, 08 and 10.
 - Gate 3, when a ROM is at hand.
 - 8x16 sprites in the fast PPU (sprite_hit 08).
 - The APU's $4017 write behaviour and the DMC sample buffer (2a03).

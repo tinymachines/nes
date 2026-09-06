@@ -38,7 +38,7 @@ source = "git+https://github.com/tinymachines/halfphi?tag=v0.1.6#1d460834d36728c
 [[package]]
 name = "halfphi"
 version = "0.1.6"
-source = "git+https://github.com/tinymachines/6502?rev=9c177cd#9c177cd9cb58010cd56a9bd2a945d99f4f3af41b"
+source = "git+https://github.com/tinymachines/6502?rev=0c239cc#0c239cccbdab608ae92e4cf36d50c08e645ff180"
 
 [[package]]
 name = "hashbrown"
@@ -86,6 +86,7 @@ dependencies = [
  "v2c02-fast",
  "v6502-micro",
  "v6502-pins",
+ "v6502-sim",
 ]
 
 [[package]]
@@ -335,7 +336,7 @@ dependencies = [
 [[package]]
 name = "v6502-micro"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/6502?rev=9c177cd#9c177cd9cb58010cd56a9bd2a945d99f4f3af41b"
+source = "git+https://github.com/tinymachines/6502?rev=0c239cc#0c239cccbdab608ae92e4cf36d50c08e645ff180"
 dependencies = [
  "v6502-netlist",
  "v6502-pins",
@@ -345,23 +346,23 @@ dependencies = [
 [[package]]
 name = "v6502-netlist"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/6502?rev=9c177cd#9c177cd9cb58010cd56a9bd2a945d99f4f3af41b"
+source = "git+https://github.com/tinymachines/6502?rev=0c239cc#0c239cccbdab608ae92e4cf36d50c08e645ff180"
 dependencies = [
  "earcutr",
- "halfphi 0.1.6 (git+https://github.com/tinymachines/6502?rev=9c177cd)",
+ "halfphi 0.1.6 (git+https://github.com/tinymachines/6502?rev=0c239cc)",
 ]
 
 [[package]]
 name = "v6502-pins"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/6502?rev=9c177cd#9c177cd9cb58010cd56a9bd2a945d99f4f3af41b"
+source = "git+https://github.com/tinymachines/6502?rev=0c239cc#0c239cccbdab608ae92e4cf36d50c08e645ff180"
 
 [[package]]
 name = "v6502-sim"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/6502?rev=9c177cd#9c177cd9cb58010cd56a9bd2a945d99f4f3af41b"
+source = "git+https://github.com/tinymachines/6502?rev=0c239cc#0c239cccbdab608ae92e4cf36d50c08e645ff180"
 dependencies = [
- "halfphi 0.1.6 (git+https://github.com/tinymachines/6502?rev=9c177cd)",
+ "halfphi 0.1.6 (git+https://github.com/tinymachines/6502?rev=0c239cc)",
  "v6502-netlist",
  "v6502-pins",
 ]

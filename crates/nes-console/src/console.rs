@@ -22,6 +22,13 @@ use crate::board::{Board, CpuBus};
 /// begins on half-step 4 mod 12 and a dot on 3 mod 8. That is one of the
 /// alignments the dividers can power up in; a console records the one
 /// it ran in its stamp, and the alignment gate holds it.
+///
+/// `cpu_phase` is the master half-step of the CPU's first half-cycle,
+/// a phi1, and every twelfth after it is the next; it ranges over a
+/// whole CPU cycle, 0 to 23, because which half-steps a phi1 falls on
+/// (against the dot's eight) is what the race gate sweeps, and the
+/// values from 12 up put the phi1 where the values below put a phi2.
+/// `ppu_phase` is the master half-step of the first dot, 0 to 7.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Alignment {
     pub cpu_phase: u8,
@@ -38,9 +45,24 @@ impl Default for Alignment {
     }
 }
 
+/// One CPU half-cycle as the console drove it: the interrupt levels
+/// presented before the step and the pin frame after it. What the
+/// alignment gate replays on the switch-level 6502.
+#[derive(Clone, Copy, Debug)]
+pub struct CpuStep {
+    /// The master half-step this CPU half-cycle ran on.
+    pub master: u64,
+    pub nmi: bool,
+    pub irq: bool,
+    pub frame: v6502_pins::PinFrame,
+}
+
 pub struct Console {
     pub board: Rc<RefCell<Board>>,
     pub cpu: Rung,
+    /// When Some, every CPU half-cycle is appended (gate 1's instrument;
+    /// None costs nothing).
+    pub cpu_trace: Option<Vec<CpuStep>>,
     pub alignment: Alignment,
     /// Master half-steps since power-on.
     pub master: u64,
@@ -60,7 +82,7 @@ impl Console {
     pub fn with_prg_ram(cart: Box<dyn Cartridge>, chr_ram: Option<Vec<u8>>, alignment: Alignment, prg_ram: bool) -> Console {
         let board = Board::new(cart, chr_ram, prg_ram);
         let cpu = Rung::with_bus(Box::new(CpuBus(board.clone())), v2a03_micro::STACK_AT_H0_MEASURED);
-        Console { board, cpu, alignment, master: 0, cpu_half_cycles: 0, dots: 0, frames: Vec::new() }
+        Console { board, cpu, cpu_trace: None, alignment, master: 0, cpu_half_cycles: 0, dots: 0, frames: Vec::new() }
     }
 
     /// One master half-step: the PPU dot and the CPU half-cycle that
@@ -75,7 +97,7 @@ impl Console {
             }
             self.dots += 1;
         }
-        if m % 12 == self.alignment.cpu_phase as u64 {
+        if m >= self.alignment.cpu_phase as u64 && (m - self.alignment.cpu_phase as u64).is_multiple_of(12) {
             // Where this half-cycle begins inside the dot last stepped,
             // for the PPU's timed reads.
             let into_dot = ((m + 8 - self.alignment.ppu_phase as u64) % 8) as u8;
@@ -88,6 +110,9 @@ impl Console {
             self.cpu.set_inputs(true, !irq, !nmi, true, false);
             self.cpu.half_step();
             self.cpu_half_cycles += 1;
+            if let Some(t) = self.cpu_trace.as_mut() {
+                t.push(CpuStep { master: m, nmi, irq, frame: self.cpu.pins() });
+            }
         }
         self.master += 1;
     }

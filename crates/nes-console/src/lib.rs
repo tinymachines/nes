@@ -24,4 +24,4 @@ pub mod ines;
 pub mod testrom;
 
 pub use board::Board;
-pub use console::{Alignment, Console};
+pub use console::{Alignment, Console, CpuStep};
