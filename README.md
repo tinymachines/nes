@@ -29,7 +29,7 @@ $2007 timings, the emphasis bit). `capture-score` runs the bars through
 ntsc-crt's capture-card model and recovers them the way the real
 capture is recovered: luma holds within 0.01 on all 436 regions, and
 the hue and saturation miss the stated tolerances on 69 regions by a
-chroma residual of at most 0.0092 that belongs to the card model's
+chroma residual of at most 0.0086 that belongs to the card model's
 anti-alias filter against the encoder's square wave, recorded, not
 fitted. The first run found the re-referencing a histogram bin coarse,
 fixed in ntsc-crt 0.2.4. The real bars record is the bench item.

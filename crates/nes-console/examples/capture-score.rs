@@ -175,6 +175,7 @@ fn main() {
     let dec = picture.decoder();
     let (tol_y, tol_hue, tol_sat_rel, tol_sat_abs, hue_floor): (f64, f64, f64, f64, f64) = (0.01, 1.0, 0.05, 0.005, 0.02);
     let mut misses = 0;
+    let (mut worst_y, mut worst_hue, mut worst_sat, mut worst_chroma, mut luma_ok, mut hue_ok, mut sat_ok, mut with_hue) = (0.0f64, 0.0f64, 0.0f64, 0.0f64, 0usize, 0usize, 0usize, 0usize);
     println!("{:<5} {:<3} {:<9} {:<9} | {:<8} {:<8} {:<8} | {:<8} {:<8} {:<8} | {:<8} {:<8} {:<8}", "col", "emp", "rows", "x", "Y syn", "sat syn", "hue syn", "Y cap", "sat cap", "hue cap", "dY", "dsat", "dhue");
     for r in &regions {
         let s = score(dec, synth, r);
@@ -187,6 +188,18 @@ fn main() {
         if miss {
             misses += 1;
         }
+        luma_ok += (dy.abs() <= tol_y) as usize;
+        sat_ok += (dsat.abs() <= sat_tol) as usize;
+        if s.sat > hue_floor {
+            with_hue += 1;
+            hue_ok += (dhue.abs() <= tol_hue) as usize;
+        }
+        let (su, sv) = (s.sat * s.hue.to_radians().cos(), s.sat * s.hue.to_radians().sin());
+        let (ku, kv) = (k.sat * k.hue.to_radians().cos(), k.sat * k.hue.to_radians().sin());
+        worst_y = worst_y.max(dy.abs());
+        worst_hue = worst_hue.max(dhue.abs());
+        worst_sat = worst_sat.max(dsat.abs());
+        worst_chroma = worst_chroma.max(((ku - su).powi(2) + (kv - sv).powi(2)).sqrt());
         let hue_s = if s.sat > hue_floor { format!("{:+.1}", s.hue) } else { "grey".into() };
         let hue_k = if s.sat > hue_floor { format!("{:+.1}", k.hue) } else { "grey".into() };
         println!(
@@ -194,6 +207,11 @@ fn main() {
             r.colour, r.emphasis, r.row0, r.row1, r.x0, r.x1, s.y, s.sat, hue_s, k.y, k.sat, hue_k, dy, dsat, dhue, if miss { "  MISS" } else { "" }
         );
     }
+    println!(
+        "within: luma {luma_ok} of {}, hue {hue_ok} of {with_hue} with a hue, saturation {sat_ok} of {}; worst: luma {worst_y:.4}, hue {worst_hue:.1} deg, saturation {worst_sat:.4}, chroma vector {worst_chroma:.4}",
+        regions.len(),
+        regions.len()
+    );
     let held = real.is_none();
     println!(
         "{} of {} regions within luma {tol_y}, hue {tol_hue} deg, saturation {}% (or {tol_sat_abs}); {}",

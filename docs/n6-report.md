@@ -100,13 +100,13 @@ residual 0.010`):
 | | regions | within | worst |
 |---|---|---|---|
 | luma (0.01) | 436 | 436 | 0.0096 |
-| hue (1.0 degree, 418 with a hue) | 418 | 360 | 12.1 degrees, on a region of saturation 0.02 |
+| hue (1.0 degree, 418 with a hue) | 418 | 352 | 12.1 degrees, on a region of saturation 0.02 |
 | saturation (5 percent or 0.005) | 436 | 431 | 0.0078 |
 | all three | 436 | 367 | |
 
 69 regions miss, so the synthetic roundtrip does not close at the
 stated tolerances, and the example exits 1 saying so. The miss is one
-residual: a chroma vector error of at most 0.0092, deterministic (the
+residual: a chroma vector error of at most 0.0086, deterministic (the
 same with the noise at zero), the same at the grid's own rate with the
 rate error at zero, so it is not the resampling or the lock's rate; on
 the saturated colours it reads as a rotation of +0.4 degrees (the burst
