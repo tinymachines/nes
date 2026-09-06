@@ -24,8 +24,6 @@
 //! tests/sound.rs: the stage to the schematic's arithmetic, and the
 //! whole path to blargg's mixer ROMs cancelling.
 
-use std::collections::VecDeque;
-
 /// Samples per second of the code stream: one per CPU half-cycle, the
 /// master's 472,500,000/11 half-steps a second over twelve. The
 /// subcarrier, exactly.
@@ -74,18 +72,26 @@ pub enum Mixer {
 
 pub struct Sound {
     mixer: Mixer,
+    /// The two DACs tabulated: ad1 by the squares' sum (0..=30), ad2 by
+    /// (tri, noise, pcm) at 16 x 16 x 128. The table's formulas, once.
+    ad1_lut: [f32; 31],
+    ad2_lut: Vec<f32>,
     hp_a: f64,
     lp_b: f64,
     hp_x1: f64,
     hp_y1: f64,
     lp_y1: f64,
-    /// Stage output awaiting resampling, from input index `pending0`.
-    pending: VecDeque<f32>,
+    /// Stage output awaiting resampling, from input index `pending0`;
+    /// compacted when the consumed prefix has grown past the window.
+    pending: Vec<f32>,
     pending0: u64,
     /// Input samples pushed.
     pub samples: u64,
-    /// Output samples emitted (48 kHz).
+    /// Output samples emitted (48 kHz), and the input index the next
+    /// one's window ends at (so a push does no arithmetic until then).
     next_out: u64,
+    next_needed: u64,
+    gain: f64,
     kernel: Vec<f32>,
     half_width: usize,
     /// The 48 kHz output, in the table's units times the stage gain
@@ -119,17 +125,25 @@ impl Sound {
             let w = 0.42 + 0.5 * (std::f64::consts::PI * u).cos() + 0.08 * (2.0 * std::f64::consts::PI * u).cos();
             kernel.push((2.0 * fc * sinc * w) as f32);
         }
+        let (ad1_lut, ad2_lut) = match mixer {
+            Mixer::Table => (std::array::from_fn(|n| v2a03_dac::ad1(n.min(15) as u8, n.saturating_sub(15) as u8)), (0..16 * 16 * 128).map(|i| v2a03_dac::ad2((i >> 11) as u8, ((i >> 7) & 15) as u8, (i & 127) as u8)).collect()),
+            Mixer::Linear => (std::array::from_fn(|n| v2a03_dac::ad1_linear(n.min(15) as u8, n.saturating_sub(15) as u8)), (0..16 * 16 * 128).map(|i| v2a03_dac::ad2_linear((i >> 11) as u8, ((i >> 7) & 15) as u8, (i & 127) as u8)).collect()),
+        };
         Sound {
             mixer,
+            ad1_lut,
+            ad2_lut,
             hp_a,
             lp_b,
             hp_x1: 0.0,
             hp_y1: 0.0,
             lp_y1: 0.0,
-            pending: VecDeque::new(),
+            pending: Vec::new(),
             pending0: 0,
             samples: 0,
             next_out: 0,
+            next_needed: half_width as u64,
+            gain: gain(),
             kernel,
             half_width,
             out: Vec::new(),
@@ -146,8 +160,11 @@ impl Sound {
     }
 
     /// One CPU half-cycle's codes.
+    #[inline]
     pub fn push(&mut self, codes: [u8; 5]) {
-        let (ad1, ad2) = self.pins(codes);
+        let [sq0, sq1, tri, noi, pcm] = codes;
+        let ad1 = self.ad1_lut[(sq0 + sq1) as usize];
+        let ad2 = self.ad2_lut[((tri as usize) << 11) | ((noi as usize) << 7) | pcm as usize];
         self.push_level((ad1 + ad2) as f64);
     }
 
@@ -160,11 +177,13 @@ impl Sound {
         let y = self.hp_a * (self.hp_y1 + x - self.hp_x1);
         self.hp_x1 = x;
         self.hp_y1 = y;
-        let z = self.lp_y1 + self.lp_b * (gain() * y - self.lp_y1);
+        let z = self.lp_y1 + self.lp_b * (self.gain * y - self.lp_y1);
         self.lp_y1 = z;
-        self.pending.push_back(z as f32);
+        self.pending.push(z as f32);
         self.samples += 1;
-        self.drain();
+        if self.samples > self.next_needed {
+            self.drain();
+        }
     }
 
     /// Emit every output sample whose kernel window the input covers.
@@ -174,28 +193,36 @@ impl Sound {
             let centre = self.next_out as f64 * RATE_NUM as f64 / (OUT_RATE as f64 * RATE_DEN as f64);
             let last_needed = (centre + self.half_width as f64).floor() as u64;
             if last_needed >= self.samples {
+                self.next_needed = last_needed;
                 return;
             }
             let first = (centre - self.half_width as f64).ceil().max(0.0) as u64;
+            let base = (first - self.pending0) as usize;
+            let src = &self.pending[base..base + (last_needed - first) as usize + 1];
             let mut acc = 0.0f64;
-            for n in first..=last_needed {
-                let d = (n as f64 - centre).abs() * TABLE_STEP as f64;
-                let i = d as usize;
-                let frac = (d - i as f64) as f32;
-                if i + 1 >= self.kernel.len() {
-                    continue;
+            let step = TABLE_STEP as f64;
+            let mut d = (first as f64 - centre) * step; // signed table position
+            let kmax = self.kernel.len() - 1;
+            for &v in src {
+                let a = d.abs();
+                let i = a as usize;
+                if i < kmax {
+                    let frac = (a - i as f64) as f32;
+                    let h = self.kernel[i] + (self.kernel[i + 1] - self.kernel[i]) * frac;
+                    acc += (h * v) as f64;
                 }
-                let h = self.kernel[i] + (self.kernel[i + 1] - self.kernel[i]) * frac;
-                acc += (h * self.pending[(n - self.pending0) as usize]) as f64;
+                d += step;
             }
             self.out.push(acc as f32);
             self.next_out += 1;
-            // Drop what no later window needs.
+            // Compact what no later window needs, once a good chunk has
+            // accumulated.
             let next_centre = self.next_out as f64 * RATE_NUM as f64 / (OUT_RATE as f64 * RATE_DEN as f64);
             let keep_from = (next_centre - self.half_width as f64).floor().max(0.0) as u64;
-            while self.pending0 < keep_from && !self.pending.is_empty() {
-                self.pending.pop_front();
-                self.pending0 += 1;
+            let drop = (keep_from.saturating_sub(self.pending0)) as usize;
+            if drop > 4 * self.half_width {
+                self.pending.drain(..drop);
+                self.pending0 += drop as u64;
             }
         }
     }
