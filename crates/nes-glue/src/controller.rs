@@ -1,6 +1,10 @@
 //! U9 and U10, two 74LS368 hex inverting three-state buffers, the
 //! controller read path, and the standard controller on the other end
-//! of it.
+//! of it. On the NES-CPU-10 board photographed for the bench
+//! (nes-bench, 2026-09-07) the parts are Toshiba TC40H368P at U7 and
+//! U8, a CMOS part in the same role with 5.6 K pullups R14 and R15
+//! beside them; the function modelled here is the same, and the
+//! numbering below is the schematic's.
 //!
 //! AUTHORED from the SN74LS368A datasheet (an enabled output is the
 //! inverted input; a disabled output floats) and the NES-001 wiring:
