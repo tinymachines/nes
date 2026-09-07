@@ -274,6 +274,19 @@ fn main() {
                 model.samples.drain(..i);
                 sliced = format!(", sliced from sample {i} as a trigger would{}", if late == 1 { " (MUTATE_TRIGGER: one frame late)" } else { "" });
             }
+            // SYNTH_OUT=path writes the synthesised record before any
+            // slice, with its rate and the trigger's sample beside it,
+            // which is what the bench's fake scope serves as a capture.
+            if let Ok(path) = std::env::var("SYNTH_OUT") {
+                let per_frame = model.samples.len() / tail.len();
+                let trig = if synth_trigger { per_frame * 2 + per_frame / 2 } else { 0 };
+                // Volts onto the byte the way a 0.5 V/div window with a -1.3 V offset
+                // would (the recovery re-references, so only the linearity matters).
+                let bytes: Vec<u8> = model.samples.iter().map(|&v| ((v + 0.5) / 2.5 * 255.0).round().clamp(0.0, 255.0) as u8).collect();
+                std::fs::write(&path, &bytes).expect("SYNTH_OUT");
+                std::fs::write(format!("{path}.toml"), format!("file = \"{}\"\nformat = \"u8\"\nrate_hz = {rate:.1}\ntrigger_sample = {trig}\n", std::path::Path::new(&path).file_name().unwrap().to_string_lossy())).expect("SYNTH_OUT toml");
+                println!("wrote the synthesised record to {path}: {} samples, trigger at {trig}", bytes.len());
+            }
             let cap = if level { auto_level_nes(&model).0 } else { model };
             (cap, format!("synthetic capture of the last {} frames at {rate} Hz, {ppm:+} ppm, {} mV DC, {} mV noise, re-referenced: {level}{sliced}", tail.len(), dc * 1000.0, noise * 1000.0))
         }

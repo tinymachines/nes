@@ -70,6 +70,18 @@ pub fn program() -> Vec<u8> {
 /// `2a03`'s joy-clock-probe, and the part's count for the bridge).
 /// Same vectors and CHR as `program`.
 pub fn pad_program(dmc: bool) -> Vec<u8> {
+    pad_program_with(dmc, false)
+}
+
+/// The polling cartridge whose picture depends on the pad: after the
+/// poll, the NMI handler writes the byte (masked to a palette index)
+/// into palette entry 1, the colour of the base program's band, so a
+/// capture shows what the console read. The bench's B3 bisects on it.
+pub fn pad_paint_program(dmc: bool) -> Vec<u8> {
+    pad_program_with(dmc, true)
+}
+
+fn pad_program_with(dmc: bool, paint: bool) -> Vec<u8> {
     let mut p = program();
     // Replace the spin: the base program's last three bytes before the
     // NOP padding are JMP spin. Find it and, with dmc, insert the DMC
@@ -89,8 +101,17 @@ pub fn pad_program(dmc: bool) -> Vec<u8> {
     assert!(jmp + tail.len() <= 0x100, "the DMC start fits before the NMI handler");
     p[jmp..jmp + tail.len()].copy_from_slice(&tail);
     // NMI at $8100: INC $00; LDA #1; STA $4016; LDA #0; STA $4016;
-    // LDX #8; loop: LDA $4016; LSR; ROL $02; DEX; BNE loop; RTI
-    let nmi: [u8; 25] = [0xe6, 0x00, 0xa9, 0x01, 0x8d, 0x16, 0x40, 0xa9, 0x00, 0x8d, 0x16, 0x40, 0xa2, 0x08, 0xad, 0x16, 0x40, 0x4a, 0x26, 0x02, 0xca, 0xd0, 0xf7, 0x40, 0xea];
+    // LDX #8; loop: LDA $4016; LSR; ROR $02; DEX; BNE loop (the byte in
+    // the pad's order, A at bit 0); then with paint: $2006 <- $3F, $01;
+    // $2007 <- $02 & $3F (A, B, Select, Start, Up, Down; the palette has
+    // six bits); $2006 <- $20, $00 (the address back on the nametable
+    // for the frame); RTI
+    let mut nmi: Vec<u8> = vec![0xe6, 0x00, 0xa9, 0x01, 0x8d, 0x16, 0x40, 0xa9, 0x00, 0x8d, 0x16, 0x40, 0xa2, 0x08, 0xad, 0x16, 0x40, 0x4a, 0x66, 0x02, 0xca, 0xd0, 0xf7];
+    if paint {
+        nmi.extend([0xa9, 0x3f, 0x8d, 0x06, 0x20, 0xa9, 0x01, 0x8d, 0x06, 0x20, 0xa5, 0x02, 0x29, 0x3f, 0x8d, 0x07, 0x20, 0xa9, 0x20, 0x8d, 0x06, 0x20, 0xa9, 0x00, 0x8d, 0x06, 0x20]);
+    }
+    nmi.push(0x40);
+    assert!(0x100 + nmi.len() <= 0x140, "the NMI handler fits before the IRQ vector's RTI");
     p[0x100..0x100 + nmi.len()].copy_from_slice(&nmi);
     // The sample: $C000.. ($4000 into PRG), a ramp, clear of the vectors.
     for i in 0..0x2000usize {

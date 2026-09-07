@@ -137,12 +137,15 @@ cargo run --release -p nes-console --example run-rom -- rom.nes [frames] [out.pp
                                   # through Rung C and the CRT stages,
                                   # DECODED=out.ppm the decoded grid;
                                   # WAV=out.wav the sound at 48 kHz
-cargo run --release -p nes-console --example export-testrom -- out.nes [bars|pad|pad-dmc]
+cargo run --release -p nes-console --example export-testrom -- out.nes [bars|pad|pad-dmc|pad-paint]
                                   # the test cartridge, the bars
                                   # cartridge, or the bench's polling
                                   # cartridge (eight reads a frame, with
-                                  # or without a DMC loop), as an iNES
-                                  # file: nobody's game, the console's own
+                                  # or without a DMC loop; pad-paint
+                                  # colours its band with the byte it
+                                  # read, for B3's bisection), as an
+                                  # iNES file: nobody's game, the
+                                  # console's own
 PAD=a5 cargo run --release -p nes-console --example pad-log -- rom.nes [frames] [script]
                                   # the controller port's poll log, one
                                   # line per latch (L index byte clocks),
@@ -172,7 +175,10 @@ cargo run --release -p nes-console --example capture-score -- rom.nes [frames] [
                                   # green run on the synthesis, and
                                   # MUTATE_TRIGGER=1 (one frame late) is
                                   # red across the bars cartridge's
-                                  # luma-row step, frames 122
+                                  # luma-row step, frames 122;
+                                  # SYNTH_OUT=path writes the synthesis
+                                  # as a u8 record with its .toml, which
+                                  # the bench's fake scope serves
 cargo build --release -p nes-shell && target/release/nes-shell rom.nes
                                   # the console in a window (a display
                                   # session, a GPU): arrows, Z and X for

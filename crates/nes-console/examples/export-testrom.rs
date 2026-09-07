@@ -2,10 +2,11 @@
 //! counts NMIs, and its tiles) as an iNES file: mapper 0, 32 KiB of PRG,
 //! 8 KiB of CHR, vertical mirroring. For a page that needs a cartridge
 //! nobody owns (the roof's e2e), never a game.
-//!   cargo run --release -p nes-console --example export-testrom -- out.nes [bars|pad|pad-dmc]
+//!   cargo run --release -p nes-console --example export-testrom -- out.nes [bars|pad|pad-dmc|pad-paint]
 //! With `bars`, the colour-bars cartridge (testrom::bars_program); with
-//! `pad` or `pad-dmc`, the bench's polling cartridge (testrom::pad_program).
-use nes_console::testrom::{bars_chr, bars_program, chr, pad_program, program};
+//! `pad` or `pad-dmc`, the bench's polling cartridge (testrom::pad_program);
+//! with `pad-paint`, the one whose picture shows the byte it read.
+use nes_console::testrom::{bars_chr, bars_program, chr, pad_paint_program, pad_program, program};
 
 fn main() {
     let out = std::env::args().nth(1).unwrap_or_else(|| "testcart.nes".into());
@@ -14,6 +15,7 @@ fn main() {
         "bars" => (bars_program(), bars_chr()),
         "pad" => (pad_program(false), chr()),
         "pad-dmc" => (pad_program(true), chr()),
+        "pad-paint" => (pad_paint_program(false), chr()),
         _ => (program(), chr()),
     };
     assert_eq!(prg.len(), 0x8000);
