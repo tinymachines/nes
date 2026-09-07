@@ -1,7 +1,7 @@
 # N5 report: the console, gates 1 and 2 recorded, gate 3 open
 
-Run stamp: 2026-09-06, rustc 1.97.1. Pins: 6502 `8b9e0b5` (v6502-micro,
-v6502-pins, v6502-sim as the gate's oracle), 2a03 `44277e1` (v2a03-micro
+Run stamp: 2026-09-06, rustc 1.97.1. Pins: 6502 `89ae24f` (v6502-micro,
+v6502-pins, v6502-sim as the gate's oracle), 2a03 `dbf116b` (v2a03-micro
 by path), 2c02 `474b7e7` (v2c02-fast by path), nes-bus v0.1.1, nes-glue
 from N4. Alignment stamp: `Alignment::MEASURED`, cpu_phase 4, ppu_phase
 3. Throughput: 125 to 140 frames a second on one core, 2.1x to 2.3x

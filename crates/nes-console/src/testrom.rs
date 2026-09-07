@@ -61,6 +61,44 @@ pub fn program() -> Vec<u8> {
     p
 }
 
+/// The polling cartridge for the bench's B0: the base program's screen,
+/// and an NMI handler that polls the pad the way a game does, one
+/// strobe and eight reads, the byte assembled into $02 and the poll
+/// counted in $00. With `dmc`, the main program also starts a looping
+/// DMC sample at the fastest rate from $C000 before the spin, so that
+/// fetches land on the poll's reads (the double clock the die shows,
+/// `2a03`'s joy-clock-probe, and the part's count for the bridge).
+/// Same vectors and CHR as `program`.
+pub fn pad_program(dmc: bool) -> Vec<u8> {
+    let mut p = program();
+    // Replace the spin: the base program's last three bytes before the
+    // NOP padding are JMP spin. Find it and, with dmc, insert the DMC
+    // start before it; the padding to $8100 has room.
+    let spin = p.iter().position(|&b| b == 0xea).expect("padding");
+    let jmp = spin - 3;
+    assert_eq!(p[jmp], 0x4c, "the spin is where the base program leaves it");
+    let mut tail: Vec<u8> = Vec::new();
+    if dmc {
+        // $4010 <- $4F (loop, rate 15); $4012 <- 0 ($C000); $4013 <- $FF; $4015 <- $10
+        for (r, v) in [(0x10u8, 0x4fu8), (0x12, 0x00), (0x13, 0xff), (0x15, 0x10)] {
+            tail.extend([0xa9, v, 0x8d, r, 0x40]);
+        }
+    }
+    let spin_at = 0x8000 + jmp as u16 + tail.len() as u16;
+    tail.extend([0x4c, spin_at as u8, (spin_at >> 8) as u8]);
+    assert!(jmp + tail.len() <= 0x100, "the DMC start fits before the NMI handler");
+    p[jmp..jmp + tail.len()].copy_from_slice(&tail);
+    // NMI at $8100: INC $00; LDA #1; STA $4016; LDA #0; STA $4016;
+    // LDX #8; loop: LDA $4016; LSR; ROL $02; DEX; BNE loop; RTI
+    let nmi: [u8; 25] = [0xe6, 0x00, 0xa9, 0x01, 0x8d, 0x16, 0x40, 0xa9, 0x00, 0x8d, 0x16, 0x40, 0xa2, 0x08, 0xad, 0x16, 0x40, 0x4a, 0x26, 0x02, 0xca, 0xd0, 0xf7, 0x40, 0xea];
+    p[0x100..0x100 + nmi.len()].copy_from_slice(&nmi);
+    // The sample: $C000.. ($4000 into PRG), a ramp, clear of the vectors.
+    for i in 0..0x2000usize {
+        p[0x4000 + i] = (i as u8).wrapping_mul(7);
+    }
+    p
+}
+
 /// CHR: tile 0 blank, tile 1 solid colour 1 (plane 0 set).
 pub fn chr() -> Vec<u8> {
     let mut c = vec![0u8; 0x2000];

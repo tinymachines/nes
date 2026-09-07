@@ -137,10 +137,22 @@ cargo run --release -p nes-console --example run-rom -- rom.nes [frames] [out.pp
                                   # through Rung C and the CRT stages,
                                   # DECODED=out.ppm the decoded grid;
                                   # WAV=out.wav the sound at 48 kHz
-cargo run --release -p nes-console --example export-testrom -- out.nes [bars]
-                                  # the test cartridge, or the bars
-                                  # cartridge, as an iNES file: nobody's
-                                  # game, the console's own
+cargo run --release -p nes-console --example export-testrom -- out.nes [bars|pad|pad-dmc]
+                                  # the test cartridge, the bars
+                                  # cartridge, or the bench's polling
+                                  # cartridge (eight reads a frame, with
+                                  # or without a DMC loop), as an iNES
+                                  # file: nobody's game, the console's own
+PAD=a5 cargo run --release -p nes-console --example pad-log -- rom.nes [frames] [script]
+                                  # the controller port's poll log, one
+                                  # line per latch (L index byte clocks),
+                                  # the line the bench's bridge streams
+                                  # from the part; a script of AT frame hh
+                                  # lines sets the pad. On pad-dmc some
+                                  # polls take nine reads: the DMC's double
+                                  # clock, measured on the 2A03's die and
+                                  # held on its rung; tests/pad_log.rs
+                                  # records the count, MUTATE_HELD=1 red
 cargo run --release -p nes-console --example capture-score -- rom.nes [frames] [record.u8 rate]
                                   # the capture path: the ROM's frames
                                   # through the card model (or a real

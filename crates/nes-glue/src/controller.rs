@@ -41,7 +41,8 @@ pub struct Buttons {
 }
 
 impl Buttons {
-    fn as_byte(self) -> u8 {
+    /// The pad's byte in the register's order, bit 0 = A, set = pressed.
+    pub fn as_byte(self) -> u8 {
         (self.a as u8)
             | (self.b as u8) << 1
             | (self.select as u8) << 2
@@ -54,12 +55,20 @@ impl Buttons {
 }
 
 /// A standard controller: the 4021, from the port's side.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct Controller {
     pub buttons: Buttons,
     /// The register, bit 0 next out; ones shift in from the top.
     shift: u8,
     strobe: bool,
+    /// Reads (clocks) since the last latch: the bench's count per poll.
+    pub clocks: u32,
+    /// Latch falls so far: the bench's poll index.
+    pub latches: u64,
+    /// When on, every latch fall pushes (the byte latched, the clocks the
+    /// previous poll took), which is the bridge's log line for a poll.
+    pub log_polls: bool,
+    pub polls: Vec<(u8, u32)>,
 }
 
 impl Controller {
@@ -69,6 +78,13 @@ impl Controller {
     pub fn strobe(&mut self, out0: bool) {
         if out0 || self.strobe {
             self.shift = self.buttons.as_byte();
+        }
+        if self.strobe && !out0 {
+            if self.log_polls {
+                self.polls.push((self.buttons.as_byte(), self.clocks));
+            }
+            self.latches += 1;
+            self.clocks = 0;
         }
         self.strobe = out0;
     }
@@ -85,7 +101,15 @@ impl Controller {
         if !self.strobe {
             self.shift = (self.shift >> 1) | 0x80;
         }
+        self.clocks += 1;
         !pressed
+    }
+}
+
+impl Buttons {
+    /// The inverse of `as_byte`: a byte in the register's order.
+    pub fn from_byte(b: u8) -> Buttons {
+        Buttons { a: b & 1 != 0, b: b & 2 != 0, select: b & 4 != 0, start: b & 8 != 0, up: b & 16 != 0, down: b & 32 != 0, left: b & 64 != 0, right: b & 128 != 0 }
     }
 }
 

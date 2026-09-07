@@ -96,7 +96,7 @@ impl Board {
         let cart = Rc::new(RefCell::new(Cart { cart, ciram: Tmm2115::new(), chr_ram }));
         let ppu = Fast::on_bus(Box::new(PpuBus(cart.clone())));
         let trace = std::env::var_os("TRACE_PPU").is_some();
-        Rc::new(RefCell::new(Board { wram: Tmm2115::new(), prg_ram: prg_ram.then(|| vec![0u8; 0x2000]), cart, ppu, pads: [Controller::default(); 2], open_bus: 0, reads: 0, writes: 0, trace, half_steps_into_dot: 0 }))
+        Rc::new(RefCell::new(Board { wram: Tmm2115::new(), prg_ram: prg_ram.then(|| vec![0u8; 0x2000]), cart, ppu, pads: [Controller::default(), Controller::default()], open_bus: 0, reads: 0, writes: 0, trace, half_steps_into_dot: 0 }))
     }
 
     fn read(&mut self, a: u16) -> u8 {
