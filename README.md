@@ -161,7 +161,18 @@ cargo run --release -p nes-console --example capture-score -- rom.nes [frames] [
                                   # synthesis; the synthetic roundtrip
                                   # is held to the plan's tolerances
                                   # (exit 1 on a miss), a real record
-                                  # is recorded
+                                  # is recorded. The bench's B1: SCRIPT=
+                                  # (the bench script's SET and AT lines),
+                                  # LATCH=n (the model's frame is the
+                                  # first after latch n), TRIGGER_SAMPLE=i
+                                  # (the record sliced from the trigger
+                                  # on, so the recovery's first full frame
+                                  # is the same frame on the part);
+                                  # SYNTH_TRIGGER=1 is the tool's own
+                                  # green run on the synthesis, and
+                                  # MUTATE_TRIGGER=1 (one frame late) is
+                                  # red across the bars cartridge's
+                                  # luma-row step, frames 122
 cargo build --release -p nes-shell && target/release/nes-shell rom.nes
                                   # the console in a window (a display
                                   # session, a GPU): arrows, Z and X for

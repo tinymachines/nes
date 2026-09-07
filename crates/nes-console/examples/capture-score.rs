@@ -24,6 +24,22 @@
 //! first run's hue and saturation misses were that. SYNTH_RAW=1 scores
 //! against the raw synthesis instead, the way the first run did.
 //!
+//! The bench's B1 (nes-bench/docs/bench-plan.md) scores a triggered
+//! capture against the model's frame at the same poll: SCRIPT=<bench
+//! script> gives the console the same SET and AT lines the bridge got,
+//! LATCH=<n> runs the console to the first frame that completes after
+//! latch n (a game polls in vblank, before the vertical sync, so the
+//! picture after that sync is the first one drawn from the input at
+//! latch n), and TRIGGER_SAMPLE=<i> slices the real record from the
+//! trigger's sample on, so the recovery's first full frame is the same
+//! frame on the part; the recovery needs two full frames after the
+//! slice, so the head places the trigger early in the record. Without
+//! a real record, SYNTH_TRIGGER=1 synthesises six frames, scores the
+//! fourth, and slices from inside the third, as a trigger placed there
+//! would, holding the roundtrip to the tolerances: the tool's own green
+//! run before any capture exists. MUTATE_TRIGGER=1 slices one frame
+//! late and must be red across the bars cartridge's luma-row step.
+//!
 //! Tolerances (docs/n6-plan.md, stated before measuring): synthetic,
 //! luma within 0.01, hue within 1.0 degree where the synthesis has a
 //! hue (saturation above 0.02; a grey has none), saturation within 5
@@ -160,14 +176,55 @@ fn main() {
     let chr_ram = rom.chr_ram.then(|| vec![0u8; 0x2000]);
     let cart = rom.nrom().expect("NROM");
     let mut c = Console::with_prg_ram(Box::new(cart), chr_ram, Alignment::default(), true);
-    c.run_frames(frames);
+    // The bench script's SET and AT lines, and the latch that picks the
+    // frame; the frame count is a ceiling when LATCH is given.
+    let latch: Option<u64> = std::env::var("LATCH").ok().and_then(|v| v.parse().ok());
+    if let Ok(path) = std::env::var("SCRIPT") {
+        let mut pad = 0u8;
+        let mut schedule = Vec::new();
+        for line in std::fs::read_to_string(&path).expect("SCRIPT file").lines() {
+            let f: Vec<&str> = line.split('#').next().unwrap_or("").split_whitespace().collect();
+            match f.as_slice() {
+                ["AT", n, b] => schedule.push((n.parse().expect("latch"), u8::from_str_radix(b, 16).expect("hex byte"))),
+                ["SET", b] => pad = u8::from_str_radix(b, 16).expect("hex byte"),
+                _ => {}
+            }
+        }
+        c.board.borrow_mut().pads[0].schedule = schedule;
+        c.set_pad(0, nes_glue::controller::Buttons::from_byte(pad));
+    }
+    let synth_trigger = std::env::var("SYNTH_TRIGGER").is_ok_and(|v| v == "1");
+    let frames = match latch {
+        Some(t) => {
+            let mut ran = 0usize;
+            while c.board.borrow().pads[0].latches <= t && ran < frames {
+                c.run_frames(1);
+                ran += 1;
+            }
+            assert!(c.board.borrow().pads[0].latches > t, "latch {t} was not reached in {frames} frames (the game polls {} times in them)", c.board.borrow().pads[0].latches);
+            // The first frame that completes after the latch.
+            c.run_frames(1);
+            ran + 1
+        }
+        None => {
+            c.run_frames(frames);
+            frames
+        }
+    };
+    if synth_trigger {
+        // Two frames past the chosen one, so the sliced synthesis has two
+        // full frames after its trigger, as the head's record will, with
+        // one to spare for the late-trigger mutation.
+        c.run_frames(2);
+    }
 
     // The synthesis: every frame encoded in order, the phase carried.
     let mut picture = Picture::decode_only();
     let encoded: Vec<CompositeFrame> = c.frames.iter().map(|f| picture.encode(f)).collect();
-    let last = c.frames.last().unwrap();
+    let chosen = c.frames.len() - if synth_trigger { 3 } else { 1 };
+    let last = &c.frames[chosen];
     let raw = std::env::var("SYNTH_RAW").is_ok_and(|v| v == "1");
-    let synth = if raw { encoded.last().unwrap().clone() } else { front_end(encoded.last().unwrap()) };
+    let synth = if raw { encoded[chosen].clone() } else { front_end(&encoded[chosen]) };
     let synth = &synth;
     let margin = margin_dots(picture.decoder());
     let regions = regions(last, margin);
@@ -176,10 +233,19 @@ fn main() {
         frames, args[1], regions.len(), last.parity, if raw { "raw" } else { "through the card model's front end" }
     );
 
+    let trigger_sample: Option<usize> = std::env::var("TRIGGER_SAMPLE").ok().and_then(|v| v.parse().ok());
     let (cap, what): (Capture, String) = match &real {
         Some((path, rate)) => {
-            let raw = read_capture(std::path::Path::new(path), "u8", Some(*rate));
-            (auto_level_nes(&raw).0, format!("real capture {path} at {rate} Hz"))
+            let mut raw = read_capture(std::path::Path::new(path), "u8", Some(*rate));
+            let sliced = match trigger_sample {
+                Some(i) => {
+                    assert!(i < raw.samples.len(), "TRIGGER_SAMPLE {i} is past the record's {} samples", raw.samples.len());
+                    raw.samples.drain(..i);
+                    format!(", from the trigger's sample {i} on")
+                }
+                None => String::new(),
+            };
+            (auto_level_nes(&raw).0, format!("real capture {path} at {rate} Hz{sliced}"))
         }
         None => {
             // The model's knobs, for finding which stage a miss belongs
@@ -189,10 +255,27 @@ fn main() {
             let (ppm, dc, noise) = (knob("SYNTH_PPM", 5.0), knob("SYNTH_DC", 0.020), knob("SYNTH_NOISE", 0.002));
             let rate = knob("SYNTH_RATE", SCOPE_RATE);
             let level = std::env::var("SYNTH_LEVEL").map(|v| v != "0").unwrap_or(true);
-            let tail: Vec<&CompositeFrame> = encoded.iter().rev().take(3).rev().collect();
-            let model = capture_model(&tail, rate, ppm, dc as f32, noise as f32, 6);
+            let tail: Vec<&CompositeFrame> = encoded.iter().rev().take(if synth_trigger { 6 } else { 3 }).rev().collect();
+            let mut model = capture_model(&tail, rate, ppm, dc as f32, noise as f32, 6);
+            let mut sliced = String::new();
+            if synth_trigger {
+                // The trigger as the bridge places it: inside the frame
+                // before the chosen one (the fourth of six), past its
+                // vertical sync, so the first full frame after the slice
+                // is the chosen frame and not the one before it.
+                // MUTATE_TRIGGER=1 slices one frame late, inside the
+                // chosen frame itself, so the recovery lands on the frame
+                // after it: across the bars cartridge's luma-row step
+                // that must be red, which is what proves the frame
+                // selection is being checked and not just the colours.
+                let per_frame = model.samples.len() / tail.len();
+                let late = std::env::var("MUTATE_TRIGGER").is_ok_and(|v| v == "1") as usize;
+                let i = per_frame * (2 + late) + per_frame / 2;
+                model.samples.drain(..i);
+                sliced = format!(", sliced from sample {i} as a trigger would{}", if late == 1 { " (MUTATE_TRIGGER: one frame late)" } else { "" });
+            }
             let cap = if level { auto_level_nes(&model).0 } else { model };
-            (cap, format!("synthetic capture of the last {} frames at {rate} Hz, {ppm:+} ppm, {} mV DC, {} mV noise, re-referenced: {level}", tail.len(), dc * 1000.0, noise * 1000.0))
+            (cap, format!("synthetic capture of the last {} frames at {rate} Hz, {ppm:+} ppm, {} mV DC, {} mV noise, re-referenced: {level}{sliced}", tail.len(), dc * 1000.0, noise * 1000.0))
         }
     };
     let rec = recover_nes(&cap);
