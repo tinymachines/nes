@@ -69,6 +69,11 @@ pub struct Controller {
     /// previous poll took), which is the bridge's log line for a poll.
     pub log_polls: bool,
     pub polls: Vec<(u8, u32)>,
+    /// The bench script's `AT n hh`: from latch n on, the register holds
+    /// hh. Applied at the strobe's rise before latch n, which is when the
+    /// bridge has the byte in its register (written after latch n-1), so
+    /// the model and the part see the same byte at the same poll.
+    pub schedule: Vec<(u64, u8)>,
 }
 
 impl Controller {
@@ -76,6 +81,19 @@ impl Controller {
     /// (so every read returns A), and the fall latches the buttons as
     /// they stand then.
     pub fn strobe(&mut self, out0: bool) {
+        if out0 && !self.strobe {
+            // The coming latch is index `latches`: the schedule's last
+            // entry at or before it is what the register holds.
+            let mut b = None;
+            for &(n, v) in &self.schedule {
+                if n <= self.latches {
+                    b = Some(v);
+                }
+            }
+            if let Some(v) = b {
+                self.buttons = Buttons::from_byte(v);
+            }
+        }
         if out0 || self.strobe {
             self.shift = self.buttons.as_byte();
         }
