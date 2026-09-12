@@ -55,6 +55,15 @@ pub struct CpuStep {
     pub nmi: bool,
     pub irq: bool,
     pub frame: v6502_pins::PinFrame,
+    /// RDY as the 2A03 feeds its 6502 core, which is what a 6502 sees:
+    /// the package has no RDY pin, `frame.rdy` is the rung's account of
+    /// the hold at the pins, and on release the die re-runs the held read
+    /// with that level already high while the core is fed one cycle
+    /// later (2a03's `rung.rs`). A record for the 6502 stack carries
+    /// this one (nes-bench's trace plan, T1: the switch-level 6502 on
+    /// the record agrees to the last half-cycle with it, and parts at
+    /// the first sprite DMA with the pin's).
+    pub core_rdy: bool,
 }
 
 pub struct Console {
@@ -117,7 +126,8 @@ impl Console {
                 s.push(self.cpu.apu.borrow().codes());
             }
             if let Some(t) = self.cpu_trace.as_mut() {
-                t.push(CpuStep { master: m, nmi, irq, frame: self.cpu.pins() });
+                let core_rdy = v6502_pins::PinEngine::pins(&self.cpu.core).rdy;
+                t.push(CpuStep { master: m, nmi, irq, frame: self.cpu.pins(), core_rdy });
             }
         }
         self.master += 1;

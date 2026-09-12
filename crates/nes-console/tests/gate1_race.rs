@@ -62,7 +62,7 @@ fn trace(prg: Vec<u8>, a: Alignment, frames: usize) -> Vec<CpuStep> {
             seen = c.cpu_half_cycles;
             let f = c.cpu.pins();
             if f.rw && !f.clk0 && (f.ab == 0x2002 || f.ab == 0xfffa) {
-                kept.push(CpuStep { master: c.master - 1, nmi: false, irq: false, frame: f });
+                kept.push(CpuStep { master: c.master - 1, nmi: false, irq: false, frame: f, core_rdy: f.rdy });
             }
         }
     }

@@ -14,7 +14,10 @@
 //!                       commercial cartridge is ROM content and stays
 //!                       where the ROM store is.
 //!   <name>.stim         the input pins by half-cycle (reset, IRQ, NMI,
-//!                       RDY, SO), so any rung replays the same run.
+//!                       RDY, SO), so any rung replays the same run. RDY
+//!                       is the level the 2A03 feeds its 6502 core, in
+//!                       the record and the stimulus alike (the package
+//!                       has no RDY pin; see CpuStep::core_rdy).
 //!   <name>.events.json  what the console knows and the pins do not:
 //!                       frame ends, every latch with its byte and its
 //!                       reads, every $4016/$4017 read with the bit it
@@ -138,7 +141,26 @@ fn main() {
     eprintln!("ran {frames} frames, {} CPU half-cycles, in {dt:.1} s", steps.len());
 
     // ---------------------------------------------------------- the pins
-    let pins: Vec<v6502_pins::PinFrame> = std::iter::once(h0).chain(steps.iter().map(|s| s.frame)).collect();
+    // The record's RDY is the level the 2A03 feeds its core, not the
+    // rung's pin-level account of the hold (CpuStep::core_rdy): a 6502
+    // released as the pin shows it goes straight on where the 2A03's core
+    // re-runs its held read, and the switch-level 6502 on the record
+    // parted at the first sprite DMA until this. The h = 0 frame is
+    // before any hold.
+    // The 2A03 rung feeds its core AFTER the step that decided the hold,
+    // so the level a step recorded is in force from the NEXT step: frame
+    // h carries the level fed after step h - 1, which is what the pin
+    // crate's driver means by an input in frame h (driven before the
+    // step that produced it). Written unshifted, the die was held one
+    // cycle early at every DMA.
+    let mut prev_core_rdy = true;
+    let pins: Vec<v6502_pins::PinFrame> = std::iter::once(h0)
+        .chain(steps.iter().map(|s| {
+            let f = v6502_pins::PinFrame { rdy: prev_core_rdy, ..s.frame };
+            prev_core_rdy = s.core_rdy;
+            f
+        }))
+        .collect();
     let stamp = format!(
         "nes-console trace of {} (crc32 {rom_crc:08X}, mapper {}) over {frames} frames, alignment cpu {} ppu {}, script {}",
         std::path::Path::new(rom_path).file_name().unwrap().to_string_lossy(),
