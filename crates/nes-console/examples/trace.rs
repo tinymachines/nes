@@ -126,6 +126,14 @@ fn main() {
         }
     }
     let dt = t.elapsed().as_secs_f64();
+    // RAM=<path> writes the work RAM as the run left it (2 KiB): the stack
+    // page and the rest, for T3's overlays and for checking a DMA's source
+    // against what the record says it read.
+    if let Ok(path) = std::env::var("RAM") {
+        let b = c.board.borrow();
+        let ram: Vec<u8> = (0..0x800u16).map(|a| b.wram.read(a)).collect();
+        std::fs::write(&path, ram).unwrap();
+    }
     let steps = c.cpu_trace.take().unwrap();
     eprintln!("ran {frames} frames, {} CPU half-cycles, in {dt:.1} s", steps.len());
 
