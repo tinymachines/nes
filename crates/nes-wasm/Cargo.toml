@@ -10,7 +10,7 @@ repository = "https://github.com/tinymachines/nes"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-nes-bus = { git = "https://github.com/tinymachines/nes-bus", tag = "v0.1.1" }
+nes-bus = { git = "https://github.com/tinymachines/nes-bus", tag = "v0.1.2" }
 nes-console = { path = "../nes-console" }
 nes-glue = { path = "../nes-glue" }
 

@@ -38,8 +38,8 @@ fn main() {
     }
     let rom = ines::parse(&bytes).expect("iNES");
     let chr_ram = rom.chr_ram.then(|| vec![0u8; 0x2000]);
-    let cart = rom.nrom().expect("NROM");
-    let mut c = Console::with_prg_ram(Box::new(cart), chr_ram, Alignment::default(), true);
+    let cart = rom.cart().expect("a cartridge this console has");
+    let mut c = Console::with_prg_ram(cart, chr_ram, Alignment::default(), true);
     {
         let mut b = c.board.borrow_mut();
         b.pads[0].log_polls = true;

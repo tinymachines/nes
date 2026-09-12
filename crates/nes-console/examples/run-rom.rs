@@ -31,7 +31,7 @@ fn main() {
     let out = args.get(3).cloned().unwrap_or_else(|| "frame.ppm".into());
     let rom = ines::parse(&bytes).expect("iNES");
     let chr_ram = rom.chr_ram.then(|| vec![0u8; 0x2000]);
-    let cart = rom.nrom().expect("NROM");
+    let cart = rom.cart().expect("a cartridge this console has");
     // ALIGN=cpu,ppu picks a power-on alignment other than the measured
     // one (the sketch's set: the dividers can start in any).
     let alignment = match std::env::var("ALIGN") {
@@ -41,7 +41,7 @@ fn main() {
         }
         Err(_) => Alignment::default(),
     };
-    let mut c = Console::with_prg_ram(Box::new(cart), chr_ram, alignment, true);
+    let mut c = Console::with_prg_ram(cart, chr_ram, alignment, true);
     let wav_out = std::env::var("WAV").ok();
     if wav_out.is_some() {
         c.sound = Some(nes_console::Sound::default());

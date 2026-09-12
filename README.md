@@ -129,7 +129,7 @@ cargo test --workspace            # every part against its datasheet,
                                   # red, its own variable because the
                                   # 2A03 rung reads MUTATE itself)
 cargo run --release -p nes-console --example run-rom -- rom.nes [frames] [out.ppm]
-                                  # a NROM ROM through the console: the
+                                  # an NROM or GxROM ROM through the console: the
                                   # last frame as PPM, the rate, and
                                   # blargg's $6000 report if there is one;
                                   # ALIGN=cpu,ppu picks another power-on

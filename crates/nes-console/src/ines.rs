@@ -1,10 +1,11 @@
-//! The iNES container, enough of it for NROM: a 16-byte header, PRG in
-//! 16 KiB units, CHR in 8 KiB units, the mirroring bit. Anything else
-//! (a mapper, a trainer, four-screen, PAL) is refused by name: the
-//! sketch's scope is NROM, and a silent fallback here would be a
-//! plausible wrong console.
+//! The iNES container, enough of it for the boards the console has: a
+//! 16-byte header, PRG in 16 KiB units, CHR in 8 KiB units, the
+//! mirroring bit, the mapper number. Mapper 0 (NROM) and 66 (GxROM, the
+//! bench's own cartridge, added 2026-09-12) are known; anything else (a
+//! trainer, four-screen, PAL, every other mapper) is refused by name: a
+//! silent fallback here would be a plausible wrong console.
 
-use nes_bus::cart::{Mirroring, Nrom};
+use nes_bus::cart::{Cartridge, Gxrom, Mirroring, Nrom};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ines {
@@ -58,5 +59,20 @@ impl Ines {
         }
         let chr = if self.chr_ram { vec![0u8; 0x2000] } else { self.chr.clone() };
         Nrom::new(self.prg.clone(), chr, self.mirroring)
+    }
+
+    /// The cartridge the header names, boxed for the console: mapper 0
+    /// as `Nrom`, mapper 66 as `Gxrom`, anything else refused by name.
+    pub fn cart(&self) -> Result<Box<dyn Cartridge>, String> {
+        match self.mapper {
+            0 => Ok(Box::new(self.nrom()?)),
+            66 => {
+                if self.chr_ram {
+                    return Err("mapper 66 with CHR RAM is not a board this console has".into());
+                }
+                Ok(Box::new(Gxrom::new(self.prg.clone(), self.chr.clone(), self.mirroring)?))
+            }
+            m => Err(format!("mapper {m} is out of scope; this console has NROM (0) and GxROM (66)")),
+        }
     }
 }

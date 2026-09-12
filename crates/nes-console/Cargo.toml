@@ -16,7 +16,7 @@ repository = "https://github.com/tinymachines/nes"
 # same revision the 2a03 pins (one MicroBus type, not two). A cold build
 # runs three rung 0s for their tables: a few minutes.
 [dependencies]
-nes-bus = { git = "https://github.com/tinymachines/nes-bus", tag = "v0.1.1" }
+nes-bus = { git = "https://github.com/tinymachines/nes-bus", tag = "v0.1.2" }
 nes-glue = { path = "../nes-glue" }
 v2a03-micro = { path = "../../../2a03/crates/v2a03-micro" }
 v2a03-dac = { path = "../../../2a03/crates/v2a03-dac" }
@@ -27,15 +27,15 @@ v6502-pins = { git = "https://github.com/tinymachines/6502", package = "v6502-pi
 # The picture (N6): the frames through ntsc-crt's NES source, the
 # three-line comb and the CRT stages, pinned by tag. Its nes-bus is the
 # tag above, so the console's DotFrame is the encoder's.
-ntsc-grid = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.8" }
-ntsc-source-nes = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.8" }
-ntsc-decode = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.8" }
-ntsc-crt = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.8" }
+ntsc-grid = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.9" }
+ntsc-source-nes = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.9" }
+ntsc-decode = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.9" }
+ntsc-crt = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.9" }
 
 # Gate 1's oracle: the switch-level 6502 (rung 0) driven with the NMI
 # timing the console's PPU produced, at the same revision as the rungs
 # above, so there is one v6502-pins frame type in the tree.
 [dev-dependencies]
 # The capture path (N6 step 2): the card model and the recovery M4 proved.
-ntsc-source-cap = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.8" }
+ntsc-source-cap = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.9" }
 v6502-sim = { git = "https://github.com/tinymachines/6502", package = "v6502-sim", rev = "89ae24f" }

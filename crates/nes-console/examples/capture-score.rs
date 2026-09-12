@@ -174,8 +174,8 @@ fn main() {
     let real = args.get(3).map(|p| (p.clone(), args.get(4).and_then(|s| s.parse::<f64>().ok()).expect("<capture> <rate>")));
     let rom = ines::parse(&bytes).expect("iNES");
     let chr_ram = rom.chr_ram.then(|| vec![0u8; 0x2000]);
-    let cart = rom.nrom().expect("NROM");
-    let mut c = Console::with_prg_ram(Box::new(cart), chr_ram, Alignment::default(), true);
+    let cart = rom.cart().expect("a cartridge this console has");
+    let mut c = Console::with_prg_ram(cart, chr_ram, Alignment::default(), true);
     // The bench script's SET and AT lines, and the latch that picks the
     // frame; the frame count is a ceiling when LATCH is given.
     let latch: Option<u64> = std::env::var("LATCH").ok().and_then(|v| v.parse().ok());

@@ -61,8 +61,8 @@ struct App {
 fn console(rom: &[u8]) -> Console {
     let r = ines::parse(rom).expect("an iNES image");
     let chr_ram = r.chr_ram.then(|| vec![0u8; 0x2000]);
-    let cart = r.nrom().expect("an NROM cartridge (the console's mapper)");
-    Console::with_prg_ram(Box::new(cart), chr_ram, Alignment::default(), true)
+    let cart = r.cart().expect("a cartridge this console has (NROM or GxROM)");
+    Console::with_prg_ram(cart, chr_ram, Alignment::default(), true)
 }
 
 fn audio(ring: &Arc<std::sync::Mutex<nes_shell::run::AudioRing>>) -> Option<cpal::Stream> {

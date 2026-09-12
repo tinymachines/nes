@@ -7,4 +7,4 @@ description = "The NES-001 mainboard's glue, authored from the parts' datasheets
 repository = "https://github.com/tinymachines/nes"
 
 [dependencies]
-nes-bus = { git = "https://github.com/tinymachines/nes-bus", tag = "v0.1.1" }
+nes-bus = { git = "https://github.com/tinymachines/nes-bus", tag = "v0.1.2" }

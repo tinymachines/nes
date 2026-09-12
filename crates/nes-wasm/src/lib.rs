@@ -17,8 +17,8 @@ impl Machine {
     pub fn new(rom: &[u8]) -> Result<Machine, String> {
         let r = ines::parse(rom).map_err(|e| format!("{e:?}"))?;
         let chr_ram = r.chr_ram.then(|| vec![0u8; 0x2000]);
-        let cart = r.nrom().map_err(|e| format!("{e:?}"))?;
-        let mut console = Console::with_prg_ram(Box::new(cart), chr_ram, Alignment::default(), true);
+        let cart = r.cart().map_err(|e| format!("{e:?}"))?;
+        let mut console = Console::with_prg_ram(cart, chr_ram, Alignment::default(), true);
         console.sound = Some(Sound::default());
         Ok(Machine { console })
     }
