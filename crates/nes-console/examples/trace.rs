@@ -159,12 +159,17 @@ fn main() {
     std::fs::write(out_dir.join(format!("{name}.pins")), text).unwrap();
 
     // ---------------------------------------------------------- the stim
+    // The pin crate's driver applies a stimulus line at h BEFORE the step
+    // that produces frame h + 1, and a frame carries the inputs as driven
+    // through the step that produced it, so a level first seen in frame h
+    // was driven at h - 1. (Written at h, every interrupt replayed a
+    // half-cycle late; rung 0 on the record found it at the first NMI.)
     let mut stim: Vec<Stim> = Vec::new();
     let mut last: Option<(bool, bool, bool, bool, bool)> = None;
     for f in &pins {
         let now = (f.res, f.irq, f.nmi, f.rdy, f.so);
         if last != Some(now) {
-            stim.push(Stim { h: f.h, res: f.res, irq: f.irq, nmi: f.nmi, rdy: f.rdy, so: f.so });
+            stim.push(Stim { h: f.h.saturating_sub(1), res: f.res, irq: f.irq, nmi: f.nmi, rdy: f.rdy, so: f.so });
             last = Some(now);
         }
     }

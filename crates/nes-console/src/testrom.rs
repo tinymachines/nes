@@ -8,9 +8,13 @@
 pub fn program() -> Vec<u8> {
     let mut p: Vec<u8> = Vec::new();
     let w = |p: &mut Vec<u8>, bytes: &[u8]| p.extend_from_slice(bytes);
-    // SEI; $4017 <- $40 (no frame IRQs); $2000 <- 0 (no NMI yet);
-    // $00..$02 <- 0 (RAM powers on as the SRAM's fill, not zero).
-    w(&mut p, &[0x78, 0xa9, 0x40, 0x8d, 0x17, 0x40, 0xa9, 0x00, 0x8d, 0x00, 0x20, 0x85, 0x00, 0x85, 0x01, 0x85, 0x02]);
+    // SEI; LDX #$FF; TXS (the stack pointer powers on undefined: the
+    // 2A03 die's measured $BD, the 6502 die's $FD, and a record of one
+    // replayed on the other parted at the first NMI's push until this
+    // line, which every real program has); $4017 <- $40 (no frame IRQs);
+    // $2000 <- 0 (no NMI yet); $00..$02 <- 0 (RAM powers on as the
+    // SRAM's fill, not zero).
+    w(&mut p, &[0x78, 0xa2, 0xff, 0x9a, 0xa9, 0x40, 0x8d, 0x17, 0x40, 0xa9, 0x00, 0x8d, 0x00, 0x20, 0x85, 0x00, 0x85, 0x01, 0x85, 0x02]);
     // wait two vblanks: BIT $2002 / BPL -5, twice
     for _ in 0..2 {
         w(&mut p, &[0x2c, 0x02, 0x20, 0x10, 0xfb]);

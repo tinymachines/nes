@@ -46,7 +46,11 @@ fn a_dmc_loop_makes_some_polls_nine_reads_and_none_other_than_eight_or_nine() {
     assert!(other.is_empty(), "a poll is eight reads or nine: {other:?}");
     assert!(nines.len() >= 10, "the DMC at its fastest rate lands on the poll's reads often over 600 frames (MUTATE_HELD asks once and finds none): {}", nines.len());
     // The model's prediction for the part, recorded so a change is seen.
-    assert_eq!((p.len(), nines.len()), (596, 21), "polls and nines over 600 frames: {} and {}", p.len(), nines.len());
+    // (596 and 21 before the cartridge set its stack pointer at reset,
+    // which moved the first poll by three bytes' worth of cycles; the
+    // flashcart's copy has to be re-exported before the bridge's log is
+    // held to this.)
+    assert_eq!((p.len(), nines.len()), (597, 21), "polls and nines over 600 frames: {} and {}", p.len(), nines.len());
 }
 
 #[test]
