@@ -19,6 +19,7 @@
 #![forbid(unsafe_code)]
 
 pub mod board;
+pub mod cal;
 pub mod console;
 pub mod ines;
 pub mod picture;

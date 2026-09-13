@@ -137,7 +137,7 @@ cargo run --release -p nes-console --example run-rom -- rom.nes [frames] [out.pp
                                   # through Rung C and the CRT stages,
                                   # DECODED=out.ppm the decoded grid;
                                   # WAV=out.wav the sound at 48 kHz
-cargo run --release -p nes-console --example export-testrom -- out.nes [bars|pad|pad-dmc|pad-paint]
+cargo run --release -p nes-console --example export-testrom -- out.nes [bars|pad|pad-dmc|pad-paint|cal]
                                   # the test cartridge, the bars
                                   # cartridge, or the bench's polling
                                   # cartridge (eight reads a frame, with
@@ -145,7 +145,19 @@ cargo run --release -p nes-console --example export-testrom -- out.nes [bars|pad
                                   # colours its band with the byte it
                                   # read, for B3's bisection), as an
                                   # iNES file: nobody's game, the
-                                  # console's own
+                                  # console's own. `cal` is the bench's
+                                  # calibration cartridge (src/cal.rs:
+                                  # eight measured screens under a strip
+                                  # that names every frame, its regions
+                                  # written beside it as out.json from
+                                  # the same generator); tests/cal.rs
+                                  # reads the strip off the model's own
+                                  # frames, MUTATE=1 one tile off is red
+cargo run --release -p nes-console --example cal-screens -- out_dir
+                                  # the calibration cartridge's eight
+                                  # screens as decoded PPMs, stepped by
+                                  # Select as a hand would; VARIANT=n
+                                  # parks the palette and bars screens
 PAD=a5 cargo run --release -p nes-console --example pad-log -- rom.nes [frames] [script]
                                   # the controller port's poll log, one
                                   # line per latch (L index byte clocks),
