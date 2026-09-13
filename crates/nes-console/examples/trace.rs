@@ -24,7 +24,10 @@
 //!                       returned, every PPU register write with the dot
 //!                       and line it landed on, every write into ROM
 //!                       space (a mapper register), every NMI edge.
-//!   <name>-f<i>.ppm     the last `pictures` frames as the PPU's colour
+//!   <name>.overlay      the same events as text, `<kind> <h> ...`, for a
+//!                       window cut from the record to carry (T3).
+//!   <name>-f<i>.ppm     the last `pictures` frames (and FRAMES_PPM=a,b
+//!                       named ones) as the PPU's colour
 //!                       indices through an authored palette (for a look,
 //!                       not a measurement; the family's real path is
 //!                       ntsc-crt). PICTURES=n sets how many (default 2).
@@ -355,9 +358,56 @@ fn main() {
     out.push_str("]\n}\n");
     std::fs::write(out_dir.join(format!("{name}.events.json")), out).unwrap();
 
+    // -------------------------------------------------------- the overlay
+    // The same events as text, one per line, `<kind> <h> ...` with h the
+    // record's own second field, so a window cut from the record can carry
+    // the lines that fall inside it without knowing what they mean (the
+    // 6502 repository's window cutter copies them; its pages read them:
+    // nes-bench's trace plan, T3). Lines whose second field is not a
+    // half-cycle (alignment, picture) are carried whole.
+    // A line's second field is its half-cycle; a line about the whole run
+    // (the alignment, a picture) carries `-` there and is copied whole.
+    let mut ov = String::new();
+    ov.push_str(&format!("alignment - {} {}\n", alignment.cpu_phase, alignment.ppu_phase));
+    // An anchor every 256 half-cycles: where that half-cycle falls in the
+    // PPU's frame (index, line, dot), so a page inside a window of any
+    // length has one to count dots from with the alignment.
+    for s in steps.iter().step_by(256) {
+        let (fi, d) = frame_of(s.master);
+        ov.push_str(&format!("dot {} {fi} {} {}\n", s.frame.h, d / 341, d % 341));
+    }
+    for (i, &(m, d, h)) in frame_ends.iter().enumerate() {
+        ov.push_str(&format!("frame {h} {i} {m} {d}\n"));
+    }
+    for (i, &(h, fi)) in latches.iter().enumerate() {
+        ov.push_str(&format!("latch {h} {i} {:02x} {fi}\n", expected_at(i as u64)));
+    }
+    for &(h, a, bit, li) in &reads {
+        ov.push_str(&format!("read {h} {a:04x} {bit} {}\n", li as i64 - 1));
+    }
+    for &(h, a, v, fi, d) in &ppu_writes {
+        ov.push_str(&format!("ppu {h} {a:04x} {v:02x} {fi} {} {}\n", d / 341, d % 341));
+    }
+    for &(h, a, v, fi) in &cart_writes {
+        ov.push_str(&format!("cart {h} {a:04x} {v:02x} {fi}\n"));
+    }
+    for &(h, low) in &nmi_edges {
+        ov.push_str(&format!("nmi {h} {}\n", low as u8));
+    }
+    // FRAMES_PPM=3,9 names frames whose pictures are written beside the
+    // trailing ones, for a window cut inside them: `picture <frame> <file>`
+    // lines say which.
+    let named: Vec<usize> = std::env::var("FRAMES_PPM").ok().map(|v| v.split(',').filter_map(|t| t.trim().parse().ok()).collect()).unwrap_or_default();
+    for &k in &named {
+        if k < c.frames.len() {
+            ov.push_str(&format!("picture - {k} {name}-f{k}.ppm\n"));
+        }
+    }
+    std::fs::write(out_dir.join(format!("{name}.overlay")), ov).unwrap();
+
     // -------------------------------------------------------- the pictures
     let n = c.frames.len();
-    for (k, f) in c.frames.iter().enumerate().skip(n.saturating_sub(pictures)) {
+    for (k, f) in c.frames.iter().enumerate().filter(|(k, _)| *k >= n.saturating_sub(pictures) || named.contains(k)) {
         let mut ppm = Vec::new();
         write!(ppm, "P6\n256 240\n255\n").unwrap();
         for y in 0..240usize {
