@@ -17,7 +17,7 @@
 //!
 //!   cargo run --release -p nes-console --example pad-log -- rom.nes [frames] [script]
 
-use nes_console::{ines, Alignment, Console};
+use nes_console::{ines, Console};
 use nes_glue::controller::Buttons;
 
 fn main() {
@@ -39,7 +39,7 @@ fn main() {
     let rom = ines::parse(&bytes).expect("iNES");
     let chr_ram = rom.chr_ram.then(|| vec![0u8; 0x2000]);
     let cart = rom.cart().expect("a cartridge this console has");
-    let mut c = Console::with_prg_ram(cart, chr_ram, Alignment::default(), true);
+    let mut c = Console::with_prg_ram(cart, chr_ram, nes_console::knobs::alignment_from_env(), true);
     {
         let mut b = c.board.borrow_mut();
         b.pads[0].log_polls = true;

@@ -22,11 +22,13 @@ pub mod board;
 pub mod cal;
 pub mod console;
 pub mod ines;
+pub mod knobs;
 pub mod picture;
 pub mod sound;
 pub mod testrom;
 
 pub use board::Board;
 pub use console::{Alignment, Console, CpuStep};
+pub use knobs::Knobs;
 pub use picture::{Picture, Shown};
 pub use sound::{Mixer, Sound};

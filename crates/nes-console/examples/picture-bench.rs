@@ -2,7 +2,7 @@
 //! encoder, the comb decoder, the CRT stages, the sound. The N8 plan's
 //! numbers.
 //!   cargo run --release -p nes-console --example picture-bench -- rom.nes [frames]
-use nes_console::{ines, Alignment, Console, Picture, Sound};
+use nes_console::{ines, Console, Picture, Sound};
 use ntsc_crt::{CrtParams, CrtPipeline};
 
 fn main() {
@@ -12,7 +12,7 @@ fn main() {
     let rom = ines::parse(&bytes).expect("iNES");
     let chr_ram = rom.chr_ram.then(|| vec![0u8; 0x2000]);
     let cart = rom.cart().expect("a cartridge this console has");
-    let mut c = Console::with_prg_ram(cart, chr_ram, Alignment::default(), true);
+    let mut c = Console::with_prg_ram(cart, chr_ram, nes_console::knobs::alignment_from_env(), true);
     c.run_frames(30);
     let t = std::time::Instant::now();
     c.run_frames(frames);

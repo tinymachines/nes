@@ -40,7 +40,7 @@
 //! to the board's own poll log, which is the derivation pad-log.rs
 //! prints. If they disagree the tool refuses: two instruments reading
 //! one run must agree before either is believed.
-use nes_console::{ines, Alignment, Console};
+use nes_console::{ines, Console};
 use nes_glue::controller::Buttons;
 use std::io::Write as _;
 use v6502_pins::{compare, parse_stim, parse_trace, write_stim, write_trace, Header, PinEngine as _, Stim, Trace};
@@ -106,7 +106,7 @@ fn main() {
         // The vector as the CPU fetches it at power-on: the last bank's $FFFC.
         (p[n - 4] as u16) | ((p[n - 3] as u16) << 8)
     };
-    let alignment = Alignment::default();
+    let alignment = nes_console::knobs::alignment_from_env();
     let mut c = Console::with_prg_ram(cart, chr_ram, alignment, true);
     c.cpu_trace = Some(Vec::new());
     {

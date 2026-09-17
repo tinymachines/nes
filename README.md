@@ -158,6 +158,18 @@ cargo run --release -p nes-console --example cal-screens -- out_dir
                                   # screens as decoded PPMs, stepped by
                                   # Select as a hand would; VARIANT=n
                                   # parks the palette and bars screens
+# Every runner below takes KNOBS=runs/<stamp>/knobs.toml, the bench's
+# knobs file (nes-console/src/knobs.rs): the model's alignment with
+# where it came from (measured, authored or fitted, and by what), read
+# at the start and printed, so a run's report carries its sources; a
+# key or table the reader does not know is refused by name, a fitted
+# knob without its residual too. tests/knobs.rs: the shape parses, the
+# refusals fire, and the alignment knob moves the scheduler (MUTATE=1
+# feeds both runs one alignment and must go red).
+cargo run -p nes-console --example knobs -- runs/<stamp>/knobs.toml
+                                  # the file read back and described,
+                                  # or refused (exit 1); what nes-bench's
+                                  # tools/knobs.py check runs
 PAD=a5 cargo run --release -p nes-console --example pad-log -- rom.nes [frames] [script]
                                   # the controller port's poll log, one
                                   # line per latch (L index byte clocks),

@@ -48,7 +48,7 @@
 //! the synthetic tolerance is named.
 
 use nes_bus::{DotFrame, ACTIVE_DOTS, ACTIVE_ROWS};
-use nes_console::{ines, Alignment, Console, Picture};
+use nes_console::{ines, Console, Picture};
 use ntsc_grid::CompositeFrame;
 use ntsc_source_cap::ingest::{auto_level_nes, read_capture};
 use ntsc_source_cap::{capture_model, front_end, recover_nes, Capture};
@@ -175,7 +175,7 @@ fn main() {
     let rom = ines::parse(&bytes).expect("iNES");
     let chr_ram = rom.chr_ram.then(|| vec![0u8; 0x2000]);
     let cart = rom.cart().expect("a cartridge this console has");
-    let mut c = Console::with_prg_ram(cart, chr_ram, Alignment::default(), true);
+    let mut c = Console::with_prg_ram(cart, chr_ram, nes_console::knobs::alignment_from_env(), true);
     // The bench script's SET and AT lines, and the latch that picks the
     // frame; the frame count is a ceiling when LATCH is given.
     let latch: Option<u64> = std::env::var("LATCH").ok().and_then(|v| v.parse().ok());

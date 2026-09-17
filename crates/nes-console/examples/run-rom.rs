@@ -33,13 +33,16 @@ fn main() {
     let chr_ram = rom.chr_ram.then(|| vec![0u8; 0x2000]);
     let cart = rom.cart().expect("a cartridge this console has");
     // ALIGN=cpu,ppu picks a power-on alignment other than the measured
-    // one (the sketch's set: the dividers can start in any).
+    // one (the sketch's set: the dividers can start in any); KNOBS=path
+    // takes it from a bench run's knobs file. Both at once is refused:
+    // one source for the alignment.
     let alignment = match std::env::var("ALIGN") {
         Ok(v) => {
+            assert!(std::env::var("KNOBS").is_err(), "ALIGN and KNOBS both set: one source for the alignment");
             let (c, p) = v.split_once(',').expect("ALIGN=cpu,ppu");
             Alignment { cpu_phase: c.parse().unwrap(), ppu_phase: p.parse().unwrap() }
         }
-        Err(_) => Alignment::default(),
+        Err(_) => nes_console::knobs::alignment_from_env(),
     };
     let mut c = Console::with_prg_ram(cart, chr_ram, alignment, true);
     let wav_out = std::env::var("WAV").ok();

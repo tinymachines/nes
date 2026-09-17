@@ -5,7 +5,7 @@
 
 use nes_bus::cart::{Mirroring, Nrom};
 use nes_console::testrom::{chr, program};
-use nes_console::{Alignment, Console};
+use nes_console::Console;
 use v6502_pins::{line, PinEngine};
 
 fn main() {
@@ -28,7 +28,7 @@ fn main() {
         Err(_) => Nrom::new(program(), chr(), Mirroring::Vertical).unwrap(),
     };
     let chr_ram = std::env::var("ROM").ok().map(|_| vec![0u8; 0x2000]);
-    let mut c = Console::new(Box::new(cart), chr_ram, Alignment::default());
+    let mut c = Console::new(Box::new(cart), chr_ram, nes_console::knobs::alignment_from_env());
     let watch: Vec<u16> = std::env::var("WATCH").ok().map(|w| w.split(',').map(|x| u16::from_str_radix(x, 16).unwrap()).collect()).unwrap_or_default();
     println!("h=0 {}", line(&c.cpu.pins()));
     let mut last = c.cpu_half_cycles;

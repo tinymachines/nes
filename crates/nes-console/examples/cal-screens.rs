@@ -12,7 +12,7 @@
 
 use nes_bus::cart::{Mirroring, Nrom};
 use nes_console::cal::{self, read_strip, SCREENS, SCREEN_NAMES, VARIANT_FRAMES};
-use nes_console::{picture, Alignment, Console, Picture};
+use nes_console::{picture, Console, Picture};
 use nes_glue::controller::Buttons;
 
 fn main() {
@@ -20,7 +20,7 @@ fn main() {
     std::fs::create_dir_all(&out).unwrap();
     let variant: usize = std::env::var("VARIANT").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
     let cart = Nrom::new(cal::program(), cal::chr(), Mirroring::Vertical).unwrap();
-    let mut c = Console::new(Box::new(cart), None, Alignment::default());
+    let mut c = Console::new(Box::new(cart), None, nes_console::knobs::alignment_from_env());
     c.run_frames(6);
     // Start holds the screen so the timer never steps it under us.
     c.set_pad(0, Buttons::from_byte(0x08));
