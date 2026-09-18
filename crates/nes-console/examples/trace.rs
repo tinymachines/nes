@@ -219,6 +219,13 @@ fn main() {
     // Frame, dot and line of a CPU half-cycle from its master step: a dot
     // is stepped on every master step congruent to the PPU phase.
     let dots_at = |m: u64| -> u64 { if m < alignment.ppu_phase as u64 { 0 } else { (m - alignment.ppu_phase as u64) / 8 + 1 } };
+    // The PPU's frame runs the pre-render line 261 first, then 0..=260:
+    // a dot count from the frame's start names that line, not line 0.
+    // Events and the overlay's `ppu` lines carry the PPU's line; the
+    // `dot` anchors keep the frame-relative index (below). Until
+    // 2026-09-18 every line here was the index, one high; the bench's
+    // dissect.py and encyclopedia carried the error, corrected there.
+    let ppu_line = |d: u64| -> u64 { (d / 341 + 261) % 262 };
     let frame_of = |m: u64| -> (usize, u64) {
         let mut start_dots = 0u64;
         for (i, &(fm, fd, _)) in frame_ends.iter().enumerate() {
@@ -342,7 +349,7 @@ fn main() {
     out.push_str(" \"ppu_writes\": [");
     for (i, &(h, a, v, fi, d)) in ppu_writes.iter().enumerate() {
         if i > 0 { out.push_str(", "); }
-        out.push_str(&format!("{{\"h\": {h}, \"reg\": \"{a:04x}\", \"value\": \"{v:02x}\", \"frame\": {fi}, \"line\": {}, \"dot\": {}}}", d / 341, d % 341));
+        out.push_str(&format!("{{\"h\": {h}, \"reg\": \"{a:04x}\", \"value\": \"{v:02x}\", \"frame\": {fi}, \"line\": {}, \"dot\": {}}}", ppu_line(d), d % 341));
     }
     out.push_str("],\n");
     out.push_str(" \"cart_writes\": [");
@@ -375,6 +382,9 @@ fn main() {
     // length has one to count dots from with the alignment.
     for s in steps.iter().step_by(256) {
         let (fi, d) = frame_of(s.master);
+        // The anchor stays the frame-relative index (line 0 = the
+        // pre-render line, as the dot count runs): the Halfshot page
+        // counts dots from it and converts to the PPU's line at display.
         ov.push_str(&format!("dot {} {fi} {} {}\n", s.frame.h, d / 341, d % 341));
     }
     for (i, &(m, d, h)) in frame_ends.iter().enumerate() {
@@ -387,7 +397,7 @@ fn main() {
         ov.push_str(&format!("read {h} {a:04x} {bit} {}\n", li as i64 - 1));
     }
     for &(h, a, v, fi, d) in &ppu_writes {
-        ov.push_str(&format!("ppu {h} {a:04x} {v:02x} {fi} {} {}\n", d / 341, d % 341));
+        ov.push_str(&format!("ppu {h} {a:04x} {v:02x} {fi} {} {}\n", ppu_line(d), d % 341));
     }
     for &(h, a, v, fi) in &cart_writes {
         ov.push_str(&format!("cart {h} {a:04x} {v:02x} {fi}\n"));
