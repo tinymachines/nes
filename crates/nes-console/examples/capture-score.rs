@@ -33,7 +33,13 @@
 //! latch n), and TRIGGER_SAMPLE=<i> slices the real record from the
 //! trigger's sample on, so the recovery's first full frame is the same
 //! frame on the part; the recovery needs two full frames after the
-//! slice, so the head places the trigger early in the record. Without
+//! slice, so the head places the trigger early in the record. That
+//! holds for a game that polls BEFORE the encoder's sync rows (245..247);
+//! one that polls after them (Super Mario Bros., line 251) puts the
+//! trigger past the sync, the recovery anchors on the next one, and
+//! the part's frame is the picture after the model's, F+1. Measured
+//! by split-score on a scrolling frame (2026-09-18); a still picture
+//! cannot show it, and E2's title did not. Without
 //! a real record, SYNTH_TRIGGER=1 synthesises six frames, scores the
 //! fourth, and slices from inside the third, as a trigger placed there
 //! would, holding the roundtrip to the tolerances: the tool's own green

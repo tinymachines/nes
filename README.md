@@ -205,6 +205,20 @@ cargo run --release -p nes-console --example capture-score -- rom.nes [frames] [
                                   # SYNTH_OUT=path writes the synthesis
                                   # as a u8 record with its .toml, which
                                   # the bench's fake scope serves
+cargo run --release -p nes-console --example split-score -- rom.nes [frames] [record.u8 rate]
+                                  # the split: every picture row's
+                                  # horizontal shift between two frames,
+                                  # on the model and on a triggered
+                                  # record, the still rows the status
+                                  # bar and the moving rows the level;
+                                  # then which of the model's frames the
+                                  # record's triggered frame is. SCRIPT,
+                                  # LATCH, TRIGGER_SAMPLE as above, GAP=n
+                                  # frames apart; the synthetic roundtrip
+                                  # is held (MUTATE_FRAME=1 and
+                                  # MUTATE_STILL=1 red), a real record
+                                  # recorded; nes-bench/tools/split-score.py
+                                  # drives it from a run
 cargo build --release -p nes-shell && target/release/nes-shell rom.nes
                                   # the console in a window (a display
                                   # session, a GPU): arrows, Z and X for
