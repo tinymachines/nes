@@ -182,6 +182,18 @@ PAD=a5 cargo run --release -p nes-console --example pad-log -- rom.nes [frames] 
                                   # clock, measured on the 2A03's die and
                                   # held on its rung; tests/pad_log.rs
                                   # records the count, MUTATE_HELD=1 red
+cargo run --release -p nes-console --example bench-script -- rom.nes script.txt [tail]
+                                  # a bench script played with its time:
+                                  # WAIT s S runs s seconds of master
+                                  # clock, RESET holds the CPU's /RESET
+                                  # half a second (the head's pulse) and
+                                  # releases it (Console::reset_button,
+                                  # the CPU's warm reset; the PPU has no
+                                  # reset here), latches counted from each
+                                  # RESET as the bridge counts them; prints
+                                  # each latch's poll line after the last
+                                  # one (menu 119, game 250).
+                                  # tests/warm_reset.rs, MUTATE_RESET=1 red
 cargo run --release -p nes-console --example capture-score -- rom.nes [frames] [record.u8 rate]
                                   # the capture path: the ROM's frames
                                   # through the card model (or a real

@@ -83,6 +83,12 @@ pub struct Console {
     /// When Some, the APU's codes after every CPU half-cycle go through
     /// the sound (N7); None costs nothing.
     pub sound: Option<crate::sound::Sound>,
+    /// The CPU's /RESET as the console drives it: true (released) from
+    /// power-on, which the rung's own power-on sequence already covers.
+    /// A shell or a runner holds it low for the front panel's button
+    /// (`reset_button`). The PPU's /RES is not driven: v2c02-fast has no
+    /// reset, so a warm reset here is the CPU's alone, and says so.
+    pub res_n: bool,
 }
 
 /// Where the vertical sync begins in the PPU's frame, as the switch-level
@@ -117,7 +123,7 @@ impl Console {
     pub fn with_prg_ram(cart: Box<dyn Cartridge>, chr_ram: Option<Vec<u8>>, alignment: Alignment, prg_ram: bool) -> Console {
         let board = Board::new(cart, chr_ram, prg_ram);
         let cpu = Rung::with_bus(Box::new(CpuBus(board.clone())), v2a03_micro::STACK_AT_H0_MEASURED);
-        Console { board, cpu, cpu_trace: None, alignment, master: 0, cpu_half_cycles: 0, dots: 0, frames: Vec::new(), sound: None }
+        Console { board, cpu, cpu_trace: None, alignment, master: 0, cpu_half_cycles: 0, dots: 0, frames: Vec::new(), sound: None, res_n: true }
     }
 
     /// One master half-step: the PPU dot and the CPU half-cycle that
@@ -142,7 +148,7 @@ impl Console {
                 let apu = self.cpu.apu.borrow();
                 apu.frame_irq || apu.dmc.irq
             };
-            self.cpu.set_inputs(true, !irq, !nmi, true, false);
+            self.cpu.set_inputs(self.res_n, !irq, !nmi, true, false);
             self.cpu.half_step();
             self.cpu_half_cycles += 1;
             if let Some(s) = self.sound.as_mut() {
@@ -203,6 +209,17 @@ impl Console {
         while self.frames.len() < target {
             self.master_half_step();
         }
+    }
+
+    /// The front panel's reset button, pressed for `hold` master half-steps
+    /// and released: the CPU's warm reset (the rung's measured freewheel),
+    /// the PPU, the cartridge and every memory left as they were. The
+    /// pad's latch count is NOT zeroed; a runner that counts from the
+    /// release (as the bench's bridge does) takes the count here.
+    pub fn reset_button(&mut self, hold: u64) {
+        self.res_n = false;
+        self.run_master(hold);
+        self.res_n = true;
     }
 
     /// The controllers, as the shell sets them.

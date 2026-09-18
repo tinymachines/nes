@@ -26,13 +26,14 @@
 //! - `[ram]` `fill`, or `seed`: the byte every work-RAM address holds at
 //!   power-on, or a pattern from a 32-bit xorshift seed (a stand-in for
 //!   a part's random RAM until its own pattern is measured).
-//!   The model's RAM starts blank; the part's does not, and the bench
-//!   found a menu that reads its uninitialised RAM (2026-09-18: the
-//!   multicart ignores Start after a cold boot and takes it after a warm
-//!   reset, on the part; the model, blank, takes it cold). A fill is an
-//!   authored stand-in until a cartridge of our own shows the part's
-//!   pattern; `Knobs::apply` writes it into the console after
-//!   construction, and every runner calls it.
+//!   The model's RAM starts blank; the part's does not. Built for a
+//!   finding that turned out to be the bench's own (2026-09-18: the
+//!   multicart's menu seemed to ignore Start after a cold boot; the
+//!   head's WAIT returned early and the scope caught the menu before
+//!   the press, and with that fixed the part takes Start cold, as the
+//!   model does). A fill is an authored stand-in until a cartridge of
+//!   our own shows the part's pattern; `Knobs::apply` writes it into
+//!   the console after construction, and every runner calls it.
 //!
 //! A knob that reaches nothing is not a knob: `tests/knobs.rs` moves
 //! the alignment and the scheduler must move with it.
