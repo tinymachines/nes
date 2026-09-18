@@ -30,6 +30,11 @@
 //!      two pictures, and the level rows' shift beyond it is how far
 //!      the scroll differs. The model frame where that is zero is the
 //!      frame the part drew.
+//!   4. the part's triggered frame's whole luma against the model's F-1
+//!      to F+2 and F+FAR (default 30) as Pearson's r, blind to a
+//!      constant gain or offset, and needing no scroll: the reading
+//!      nes-bench's b3.py calls a replay's frame by. Recorded on a real
+//!      record and on the synthesis alike, not held (see the section).
 //!
 //! SCRIPT, LATCH, TRIGGER_SAMPLE and KNOBS as capture-score reads them.
 //! Without a record the part's side is synthesised from the model's own
@@ -123,6 +128,20 @@ fn row_shift(a: &[f32], b: &[f32]) -> Row {
 /// Every row of `a` against the same row of `b`. Index 0 is picture row 1.
 fn shifts(a: &[f32], b: &[f32]) -> Vec<Row> {
     (0..ROWS - 1).map(|r| row_shift(&a[r * WIDTH..(r + 1) * WIDTH], &b[r * WIDTH..(r + 1) * WIDTH])).collect()
+}
+
+/// Pearson's r between two equal-length sample runs.
+fn pearson(a: &[f32], b: &[f32]) -> f64 {
+    let n = a.len().min(b.len()) as f64;
+    let (ma, mb) = (a.iter().map(|&x| x as f64).sum::<f64>() / n, b.iter().map(|&x| x as f64).sum::<f64>() / n);
+    let (mut sab, mut saa, mut sbb) = (0.0, 0.0, 0.0);
+    for (&x, &y) in a.iter().zip(b) {
+        let (dx, dy) = (x as f64 - ma, y as f64 - mb);
+        sab += dx * dy;
+        saa += dx * dx;
+        sbb += dy * dy;
+    }
+    sab / (saa * sbb).sqrt()
 }
 
 fn median(mut v: Vec<f64>) -> Option<f64> {
@@ -250,7 +269,9 @@ fn main() {
     println!("latch {latch} fell at PPU line {} dot {}, {} the vertical sync's onset", pos.line, pos.dot, if nes_console::after_vsync_onset(pos) { "after" } else { "before" });
     // Past F: the pair's second frame, the cross's F+2, and what a
     // synthesised record needs after its last slice.
-    c.run_frames(gap + 5);
+    // FAR: section 4's contrast frame, F+FAR.
+    let far: usize = std::env::var("FAR").ok().and_then(|v| v.parse().ok()).unwrap_or(30);
+    c.run_frames((gap + 5).max(far + 1));
     assert!(chosen >= 3, "the latch came before the model had drawn three frames");
 
     // The synthesis: every frame encoded in order, the phase carried;
@@ -317,6 +338,26 @@ fn main() {
         Some((j, d)) => println!("the part's triggered frame is the model's F{j:+} (the level {d:+.2} dots beyond the bar there)"),
         None => println!("no model frame could be compared: the bar or the level had no row with an answer"),
     }
+
+    // 4. The whole picture: the part's triggered frame's luma against
+    // the model's frames around F, as a Pearson correlation over every
+    // decoded sample, so a constant gain or offset (the part's luma
+    // runs a few hundredths low, E2) does not count and a different
+    // screen does. F+FAR is the contrast: the same game some frames on.
+    // Unlike 3 it needs no scroll, so it answers on a still screen too;
+    // nes-bench's b3.py reads it to call a replay's frame the model's.
+    // First reading (2026-09-18, the split record): F+0 0.923, F-1..F+2
+    // otherwise 0.68 to 0.70, F+30 0.52. OPEN: the synthetic roundtrip
+    // reads only 0.77 at F+0 and the same at F+1 (each best a row off,
+    // in opposite directions), where a clean synthesis should come near
+    // 1; the recovery's anchor is where it should be, so the cause is
+    // not yet named. Recorded, not held.
+    let mut corr: Vec<(isize, f64)> = Vec::new();
+    for j in [-1isize, 0, 1, 2, far as isize] {
+        corr.push((j, pearson(&model((chosen as isize + j) as usize), &p0)));
+    }
+    let line: Vec<String> = corr.iter().map(|(j, r)| format!("F{j:+} {r:.4}")).collect();
+    println!("the whole picture's luma, part against model (Pearson r): {}", line.join("  "));
 
     if real.is_none() {
         let mut red = Vec::new();
