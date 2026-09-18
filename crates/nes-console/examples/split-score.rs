@@ -32,9 +32,13 @@
 //!      frame the part drew.
 //!   4. the part's triggered frame's whole luma against the model's F-1
 //!      to F+2 and F+FAR (default 30) as Pearson's r, blind to a
-//!      constant gain or offset, and needing no scroll: the reading
-//!      nes-bench's b3.py calls a replay's frame by. Recorded on a real
-//!      record and on the synthesis alike, not held (see the section).
+//!      constant gain or offset, and needing no scroll: at full
+//!      resolution (which frame) and at the screen's coarse shape, 30
+//!      by 32 blocks (which screen); with the luma's spread on each side
+//!      and the part against itself GAP frames on. nes-bench's b3.py
+//!      calls a replay's frame the model's by the two correlations.
+//!      Recorded on a real record and on the synthesis alike, not held
+//!      (see the section).
 //!
 //! SCRIPT, LATCH, TRIGGER_SAMPLE and KNOBS as capture-score reads them.
 //! Without a record the part's side is synthesised from the model's own
@@ -347,7 +351,13 @@ fn main() {
     // Unlike 3 it needs no scroll, so it answers on a still screen too;
     // nes-bench's b3.py reads it to call a replay's frame the model's.
     // First reading (2026-09-18, the split record): F+0 0.923, F-1..F+2
-    // otherwise 0.68 to 0.70, F+30 0.52. OPEN: the synthetic roundtrip
+    // otherwise 0.68 to 0.70, F+30 0.52. The coarse shape then read
+    // 0.997 to 0.999 on every true match the bench had (the black world
+    // card too, whose small text reads 0.71 at full resolution against
+    // every frame, while the part against itself reads 0.999: the two
+    // picture chains differ at fine detail, not the frames), 0.72 to
+    // 0.78 thirty frames on, 0.66 against a record with Right dropped.
+    // OPEN: the synthetic roundtrip
     // reads only 0.77 at F+0 and the same at F+1 (each best a row off,
     // in opposite directions), where a clean synthesis should come near
     // 1; the recovery's anchor is where it should be, so the cause is
@@ -356,8 +366,43 @@ fn main() {
     for j in [-1isize, 0, 1, 2, far as isize] {
         corr.push((j, pearson(&model((chosen as isize + j) as usize), &p0)));
     }
+    // The same at the screen's coarse shape: the luma averaged into
+    // blocks of 8 rows by 64 samples (8 dots), 30 by 32 of them, where
+    // the two picture chains' differences at fine detail (a card of
+    // small text read 0.71 at full resolution against every frame)
+    // average away and what is left is which screen it is.
+    let blocks = |v: &[f32]| {
+        let rows = v.len() / WIDTH;
+        let (bh, bw) = (8usize, 64usize);
+        let mut out = Vec::new();
+        for by in 0..rows / bh {
+            for bx in 0..WIDTH / bw {
+                let mut acc = 0.0f32;
+                for y in by * bh..(by + 1) * bh {
+                    acc += v[y * WIDTH + bx * bw..y * WIDTH + (bx + 1) * bw].iter().sum::<f32>();
+                }
+                out.push(acc / (bh * bw) as f32);
+            }
+        }
+        out
+    };
+    let pb = blocks(&p0);
+    let coarse: Vec<String> = [-1isize, 0, 1, 2, far as isize].iter().map(|&j| format!("F{j:+} {:.4}", pearson(&blocks(&model((chosen as isize + j) as usize)), &pb))).collect();
+    println!("the screen's coarse shape, 8-row by 8-dot blocks, part against model (Pearson r): {}", coarse.join("  "));
     let line: Vec<String> = corr.iter().map(|(j, r)| format!("F{j:+} {r:.4}")).collect();
     println!("the whole picture's luma, part against model (Pearson r): {}", line.join("  "));
+    // How much there is to correlate: the luma's spread over the frame,
+    // the model's F and the part's. A screen near one level (a game's
+    // black card) answers every frame alike whatever the part drew.
+    let sd = |v: &[f32]| {
+        let m = v.iter().map(|&x| x as f64).sum::<f64>() / v.len() as f64;
+        (v.iter().map(|&x| (x as f64 - m).powi(2)).sum::<f64>() / v.len() as f64).sqrt()
+    };
+    println!("the luma's spread over the frame (standard deviation): model F {:.4}, part {:.4}", sd(&model(chosen)), sd(&p0));
+    // The part against itself GAP frames on: on a still screen the
+    // ceiling any match can reach through the part's own noise (a
+    // noiseless model that matches reads about its square root).
+    println!("the part against itself {gap} frames on (Pearson r): {:.4}", pearson(&p0, &p1));
 
     if real.is_none() {
         let mut red = Vec::new();
