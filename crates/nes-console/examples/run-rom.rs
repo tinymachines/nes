@@ -45,6 +45,7 @@ fn main() {
         Err(_) => nes_console::knobs::alignment_from_env(),
     };
     let mut c = Console::with_prg_ram(cart, chr_ram, alignment, true);
+    nes_console::knobs::configure_from_env(&mut c);
     let wav_out = std::env::var("WAV").ok();
     if wav_out.is_some() {
         c.sound = Some(nes_console::Sound::default());

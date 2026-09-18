@@ -108,6 +108,7 @@ fn main() {
     };
     let alignment = nes_console::knobs::alignment_from_env();
     let mut c = Console::with_prg_ram(cart, chr_ram, alignment, true);
+    nes_console::knobs::configure_from_env(&mut c);
     c.cpu_trace = Some(Vec::new());
     {
         let mut b = c.board.borrow_mut();

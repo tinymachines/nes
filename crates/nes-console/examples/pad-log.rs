@@ -40,6 +40,7 @@ fn main() {
     let chr_ram = rom.chr_ram.then(|| vec![0u8; 0x2000]);
     let cart = rom.cart().expect("a cartridge this console has");
     let mut c = Console::with_prg_ram(cart, chr_ram, nes_console::knobs::alignment_from_env(), true);
+    nes_console::knobs::configure_from_env(&mut c);
     {
         let mut b = c.board.borrow_mut();
         b.pads[0].log_polls = true;

@@ -101,3 +101,23 @@ fn the_alignment_knob_reaches_the_scheduler() {
     let (ha, hb) = (cpu_half_cycles_after_a_frame(a), cpu_half_cycles_after_a_frame(b));
     assert_ne!(ha, hb, "the alignment knob changed nothing the scheduler counts ({ha} CPU half-cycles either way)");
 }
+
+#[test]
+fn the_ram_fill_knob_reaches_the_board() {
+    let k = Knobs::parse("[ram]\nfill = 255\nsource = \"authored\"\nby = \"the bench's cold-boot finding\"\n", "k.toml").unwrap();
+    assert!(k.describe().contains("ram fill ff at power-on, authored by"), "{}", k.describe());
+    let cart = Nrom::new(pad_program(false), chr(), Mirroring::Vertical).unwrap();
+    let mut c = Console::new(Box::new(cart), None, Alignment::default());
+    if std::env::var("MUTATE").is_ok_and(|v| v == "1") {
+        // The knob applied to a console the board never sees.
+        let cart2 = Nrom::new(pad_program(false), chr(), Mirroring::Vertical).unwrap();
+        let mut other = Console::new(Box::new(cart2), None, Alignment::default());
+        k.apply(&mut other);
+    } else {
+        k.apply(&mut c);
+    }
+    let b = c.board.borrow();
+    assert_eq!((b.wram.read(0x0000), b.wram.read(0x07ff)), (0xff, 0xff), "the fill did not reach the work RAM");
+    let e = Knobs::parse("[ram]\nfill = 256\nsource = \"authored\"\nby = \"x\"\n", "k.toml").unwrap_err();
+    assert!(e.contains("not a byte"), "{e}");
+}

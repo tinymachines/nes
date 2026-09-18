@@ -23,6 +23,16 @@
 //! - `[capture]` `scale_v_per_div`, `offset_v`, `channel`: the bench's
 //!   scope window for the video, from the run's `ARM` line; the scorer
 //!   picks the channel from it.
+//! - `[ram]` `fill`, or `seed`: the byte every work-RAM address holds at
+//!   power-on, or a pattern from a 32-bit xorshift seed (a stand-in for
+//!   a part's random RAM until its own pattern is measured).
+//!   The model's RAM starts blank; the part's does not, and the bench
+//!   found a menu that reads its uninitialised RAM (2026-09-18: the
+//!   multicart ignores Start after a cold boot and takes it after a warm
+//!   reset, on the part; the model, blank, takes it cold). A fill is an
+//!   authored stand-in until a cartridge of our own shows the part's
+//!   pattern; `Knobs::apply` writes it into the console after
+//!   construction, and every runner calls it.
 //!
 //! A knob that reaches nothing is not a knob: `tests/knobs.rs` moves
 //! the alignment and the scheduler must move with it.
@@ -71,6 +81,8 @@ pub struct Knobs {
     pub path: String,
     pub alignment: Option<(Alignment, Source)>,
     pub capture: Option<Capture>,
+    pub ram_fill: Option<(u8, Source)>,
+    pub ram_seed: Option<(u32, Source)>,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -236,7 +248,28 @@ impl Knobs {
                         }
                         knobs.capture = Some(Capture { scale_v_per_div: t.float("scale_v_per_div")?, offset_v: t.float("offset_v")?, channel: ch as u8, source: t.source()? });
                     }
-                    other => return Err(format!("a table this reader does not know: [{other}] (it knows [alignment], [capture])")),
+                    "ram" => {
+                        t.only(&["fill", "seed"])?;
+                        match (t.get("fill").is_ok(), t.get("seed").is_ok()) {
+                            (true, true) => return Err("[ram] carries both `fill` and `seed`: one pattern".to_string()),
+                            (false, false) => return Err("[ram] has neither `fill` nor `seed`".to_string()),
+                            (true, false) => {
+                                let f = t.int("fill")?;
+                                if !(0..=255).contains(&f) {
+                                    return Err(format!("[ram] `fill` {f} is not a byte"));
+                                }
+                                knobs.ram_fill = Some((f as u8, t.source()?));
+                            }
+                            (false, true) => {
+                                let sd = t.int("seed")?;
+                                if sd <= 0 || sd > u32::MAX as i64 {
+                                    return Err(format!("[ram] `seed` {sd} is not a nonzero 32-bit value"));
+                                }
+                                knobs.ram_seed = Some((sd as u32, t.source()?));
+                            }
+                        }
+                    }
+                    other => return Err(format!("a table this reader does not know: [{other}] (it knows [alignment], [capture], [ram])")),
                 }
                 Ok(())
             })();
@@ -273,7 +306,34 @@ impl Knobs {
         if let Some(c) = &self.capture {
             lines.push(format!("  capture CH{} at {} V/div, offset {} V, {}", c.channel, c.scale_v_per_div, c.offset_v, c.source.describe()));
         }
+        if let Some((f, s)) = &self.ram_fill {
+            lines.push(format!("  ram fill {f:02x} at power-on, {}", s.describe()));
+        }
+        if let Some((sd, s)) = &self.ram_seed {
+            lines.push(format!("  ram pattern from seed {sd} at power-on, {}", s.describe()));
+        }
         lines.join("\n")
+    }
+
+    /// The knobs that act after construction: the work RAM's power-on
+    /// fill, written into every address the CPU can reach.
+    pub fn apply(&self, c: &mut crate::console::Console) {
+        if let Some((f, _)) = self.ram_fill {
+            let mut b = c.board.borrow_mut();
+            for a in 0..0x800u16 {
+                b.wram.write(a, f);
+            }
+        }
+        if let Some((sd, _)) = self.ram_seed {
+            let mut x = sd;
+            let mut b = c.board.borrow_mut();
+            for a in 0..0x800u16 {
+                x ^= x << 13;
+                x ^= x >> 17;
+                x ^= x << 5;
+                b.wram.write(a, (x >> 24) as u8);
+            }
+        }
     }
 }
 
@@ -291,5 +351,13 @@ pub fn alignment_from_env() -> Alignment {
             eprintln!("KNOBS refused: {e}");
             std::process::exit(2);
         }
+    }
+}
+
+/// What every runner does once the console exists: the knobs that act
+/// on it (the RAM fill). Quiet without `KNOBS`.
+pub fn configure_from_env(c: &mut crate::console::Console) {
+    if let Ok(Some(k)) = Knobs::from_env() {
+        k.apply(c);
     }
 }
