@@ -159,7 +159,9 @@ cargo run --release -p nes-console --example cal-screens -- out_dir
                                   # Select as a hand would; VARIANT=n
                                   # parks the palette and bars screens
 # Every runner below takes KNOBS=runs/<stamp>/knobs.toml, the bench's
-# knobs file (nes-console/src/knobs.rs): the model's alignment with
+# knobs file (nes-console/src/knobs.rs): the model's alignment and its
+# work RAM's power-on pattern (a fill byte or a seeded pattern: the model's
+# blank RAM is a knob, not a fact), each with
 # where it came from (measured, authored or fitted, and by what), read
 # at the start and printed, so a run's report carries its sources; a
 # key or table the reader does not know is refused by name, a fitted
