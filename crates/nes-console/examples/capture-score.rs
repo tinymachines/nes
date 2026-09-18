@@ -33,13 +33,14 @@
 //! latch n), and TRIGGER_SAMPLE=<i> slices the real record from the
 //! trigger's sample on, so the recovery's first full frame is the same
 //! frame on the part; the recovery needs two full frames after the
-//! slice, so the head places the trigger early in the record. That
-//! holds for a game that polls BEFORE the encoder's sync rows (245..247);
-//! one that polls after them (Super Mario Bros., line 251) puts the
-//! trigger past the sync, the recovery anchors on the next one, and
-//! the part's frame is the picture after the model's, F+1. Measured
-//! by split-score on a scrolling frame (2026-09-18); a still picture
-//! cannot show it, and E2's title did not. Without
+//! slice, so the head places the trigger early in the record. Which
+//! picture that is depends on where the poll falls against the vertical
+//! sync's onset (row 244 dot 280 on the die): `Console::
+//! run_to_picture_after_latch` decides from the latch's recorded PPU
+//! position. Until 2026-09-18 this took the next picture always, one
+//! frame early for a game that polls after the onset (Super Mario
+//! Bros., line 251), found by split-score on a scrolling frame; a
+//! still picture cannot show it, and E2's title did not. Without
 //! a real record, SYNTH_TRIGGER=1 synthesises six frames, scores the
 //! fourth, and slices from inside the third, as a trigger placed there
 //! would, holding the roundtrip to the tolerances: the tool's own green
@@ -203,15 +204,12 @@ fn main() {
     let synth_trigger = std::env::var("SYNTH_TRIGGER").is_ok_and(|v| v == "1");
     let frames = match latch {
         Some(t) => {
-            let mut ran = 0usize;
-            while c.board.borrow().pads[0].latches <= t && ran < frames {
-                c.run_frames(1);
-                ran += 1;
-            }
-            assert!(c.board.borrow().pads[0].latches > t, "latch {t} was not reached in {frames} frames (the game polls {} times in them)", c.board.borrow().pads[0].latches);
-            // The first frame that completes after the latch.
-            c.run_frames(1);
-            ran + 1
+            // The picture the part's recovery hands back for a trigger
+            // at this latch: the rule and its measurement are the
+            // console's (`picture_after_latch`).
+            let (target, pos) = c.run_to_picture_after_latch(t, frames).unwrap_or_else(|e| panic!("{e}"));
+            println!("latch {t} fell at PPU line {} dot {}, {} the vertical sync's onset: the part's frame is picture {target}", pos.line, pos.dot, if nes_console::after_vsync_onset(pos) { "after" } else { "before" });
+            target + 1
         }
         None => {
             c.run_frames(frames);

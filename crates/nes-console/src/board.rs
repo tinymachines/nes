@@ -15,7 +15,7 @@ use nes_bus::cart::Cartridge;
 use nes_glue::controller::{read_4016, read_4017, Controller};
 use nes_glue::decode::cpu_decode;
 use nes_glue::sram::Tmm2115;
-use v2c02_fast::{Fast, VramBus};
+use v2c02_fast::{Fast, Position, VramBus};
 use v6502_micro::machine::MicroBus;
 
 /// The cartridge and CIRAM, reached from both buses (PRG from the CPU's,
@@ -89,6 +89,15 @@ pub struct Board {
     /// the start of the dot last stepped to this half-cycle's start, for
     /// the PPU's timed \$2002 read.
     pub half_steps_into_dot: u8,
+    /// OUT0 as last written, so the strobe's edges are seen here.
+    out0: bool,
+    strobe_rose_at: Option<Position>,
+    /// Where in the PPU's frame every latch fell: (the strobe's rise,
+    /// its fall), indexed by latch (the bench's poll index). The frame a
+    /// triggered capture hands back depends on where the poll sits
+    /// against the vertical sync (`Console::picture_after_latch`), and
+    /// the bench's `poll-line.py` measures the rise on the part.
+    pub latch_positions: Vec<(Position, Position)>,
 }
 
 impl Board {
@@ -96,7 +105,7 @@ impl Board {
         let cart = Rc::new(RefCell::new(Cart { cart, ciram: Tmm2115::new(), chr_ram }));
         let ppu = Fast::on_bus(Box::new(PpuBus(cart.clone())));
         let trace = std::env::var_os("TRACE_PPU").is_some();
-        Rc::new(RefCell::new(Board { wram: Tmm2115::new(), prg_ram: prg_ram.then(|| vec![0u8; 0x2000]), cart, ppu, pads: [Controller::default(), Controller::default()], open_bus: 0, reads: 0, writes: 0, trace, half_steps_into_dot: 0 }))
+        Rc::new(RefCell::new(Board { wram: Tmm2115::new(), prg_ram: prg_ram.then(|| vec![0u8; 0x2000]), cart, ppu, pads: [Controller::default(), Controller::default()], open_bus: 0, reads: 0, writes: 0, trace, half_steps_into_dot: 0, out0: false, strobe_rose_at: None, latch_positions: Vec::new() }))
     }
 
     fn read(&mut self, a: u16) -> u8 {
@@ -157,9 +166,18 @@ impl Board {
             self.ppu.write((a & 7) as u8, v);
         } else if a == 0x4016 {
             // OUT0 is the controller strobe.
+            let out0 = v & 1 != 0;
             for p in &mut self.pads {
-                p.strobe(v & 1 != 0);
+                p.strobe(out0);
             }
+            let pos = self.ppu.position();
+            if out0 && !self.out0 {
+                self.strobe_rose_at = Some(pos);
+            }
+            if !out0 && self.out0 {
+                self.latch_positions.push((self.strobe_rose_at.take().unwrap_or(pos), pos));
+            }
+            self.out0 = out0;
         } else if a < 0x4020 {
             // The 2A03's registers: the Rung takes them from its own frames.
         } else if let (true, Some(ram)) = ((0x6000..0x8000).contains(&a), self.prg_ram.as_mut()) {

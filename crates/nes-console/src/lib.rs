@@ -28,7 +28,7 @@ pub mod sound;
 pub mod testrom;
 
 pub use board::Board;
-pub use console::{Alignment, Console, CpuStep};
+pub use console::{after_vsync_onset, picture_after_latch, Alignment, Console, CpuStep, VSYNC_ONSET};
 pub use knobs::Knobs;
 pub use picture::{Picture, Shown};
 pub use sound::{Mixer, Sound};

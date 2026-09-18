@@ -7,6 +7,7 @@ use std::rc::Rc;
 
 use nes_bus::cart::Cartridge;
 use nes_bus::DotFrame;
+use v2c02_fast::Position;
 use v2a03_micro::rung::Rung;
 use v6502_pins::PinEngine;
 
@@ -84,6 +85,28 @@ pub struct Console {
     pub sound: Option<crate::sound::Sound>,
 }
 
+/// Where the vertical sync begins in the PPU's frame, as the switch-level
+/// 2C02 emits it (`2c02`'s `vsync-probe`: the sync-tip leg asserted from
+/// row 244 dot 280 through row 245 dot 257, three such pulses a row
+/// apart) and as the console's record shows it (nes-bench run
+/// 20260918-135721: the broad pulse one line after the preceding
+/// horizontal sync). In the PPU's own dot count, which is what
+/// `Position` carries.
+pub const VSYNC_ONSET: Position = Position { line: 244, dot: 280 };
+
+/// Whether a position in the PPU's frame (261 first, then 0..=260) comes
+/// after the vertical sync's onset, so the next sync is the following
+/// frame's.
+pub fn after_vsync_onset(p: Position) -> bool {
+    p.line != nes_bus::LINES - 1 && (p.line > VSYNC_ONSET.line || (p.line == VSYNC_ONSET.line && p.dot >= VSYNC_ONSET.dot))
+}
+
+/// The index of the picture a capture triggered at a latch that fell at
+/// `pos` in frame `fell_in` hands back (`run_to_picture_after_latch`).
+pub fn picture_after_latch(fell_in: usize, pos: Position) -> usize {
+    fell_in + if after_vsync_onset(pos) { 2 } else { 1 }
+}
+
 impl Console {
     pub fn new(cart: Box<dyn Cartridge>, chr_ram: Option<Vec<u8>>, alignment: Alignment) -> Console {
         Console::with_prg_ram(cart, chr_ram, alignment, false)
@@ -137,6 +160,41 @@ impl Console {
         for _ in 0..n {
             self.master_half_step();
         }
+    }
+
+    /// Run until latch `t` (the bench's poll index) has fallen, at most
+    /// `ceiling` frames: the frame it fell in and where in the PPU's
+    /// frame the strobe fell.
+    pub fn run_to_latch(&mut self, t: u64, ceiling: usize) -> Result<(usize, Position), String> {
+        let mut ran = 0usize;
+        while self.board.borrow().pads[0].latches <= t {
+            if ran >= ceiling {
+                return Err(format!("latch {t} was not reached in {ceiling} frames (the game polled {} times in them)", self.board.borrow().pads[0].latches));
+            }
+            self.run_frames(1);
+            ran += 1;
+        }
+        let pos = self.board.borrow().latch_positions[t as usize].1;
+        Ok((self.frames.len() - 1, pos))
+    }
+
+    /// Run to the picture a capture triggered at latch `t` hands back,
+    /// and return its index in `frames`. The recovery anchors on the
+    /// first vertical sync after the trigger and returns the picture
+    /// that follows it; the PPU's frame runs 261 (pre-render) then
+    /// 0..=260 and its picture completes at the end of line 260, so a
+    /// poll before the sync's onset is answered by the picture after
+    /// the frame it fell in, and a poll after the onset (a game that
+    /// polls late in the blank, Super Mario Bros. at line 251) by the
+    /// one after that. Found by `split-score` on the first scrolling
+    /// frame the bench captured (2026-09-18): the earlier rule, always
+    /// the next picture, was one frame early there and could not have
+    /// been caught on a still picture.
+    pub fn run_to_picture_after_latch(&mut self, t: u64, ceiling: usize) -> Result<(usize, Position), String> {
+        let (fell_in, pos) = self.run_to_latch(t, ceiling)?;
+        let target = picture_after_latch(fell_in, pos);
+        self.run_frames(target - fell_in);
+        Ok((target, pos))
     }
 
     /// Run until `n` more frames have completed.

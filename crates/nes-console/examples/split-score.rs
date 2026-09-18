@@ -18,8 +18,10 @@
 //! and that bracket is as tight as the picture's content lets it be.
 //!
 //! Three measurements, none told another's answer:
-//!   1. the model's frame F against F+GAP (F = the first frame that
-//!      completes after LATCH, as capture-score has it);
+//!   1. the model's frame F against F+GAP (F = the picture the part's
+//!      recovery hands back for a trigger at LATCH, placed by where the
+//!      latch fell against the vertical sync: `Console::
+//!      run_to_picture_after_latch`, as capture-score has it);
 //!   2. the part's frame at the trigger against the part's frame GAP
 //!      later (the record sliced one frame period further on each time,
 //!      the recovery taking the first full frame after the slice);
@@ -44,13 +46,13 @@
 //! both still through row 32 and moving from row 47, the fourteen sky
 //! rows between flat; advance 1.89 dots (model) against 1.94 (part)
 //! over two frames, 4.30 against 4.34 over four. The part's triggered
-//! frame was the model's F+1, not F: this game polls at line 251,
-//! AFTER the encoder's sync rows (245..247), and the recovery hands
-//! back the first full frame after the next sync, which is the picture
-//! after the first one drawn from the latch. capture-score's LATCH
-//! convention assumes a poll before the sync and is one picture late
-//! on this game; a still picture (E2's title) cannot show it, a
-//! scrolling one does, 1.3 dots at F+0 here.
+//! frame was the model's F+1 under the rule of the day (the next
+//! picture after the frame the latch fell in): this game polls at line
+//! 251, after the vertical sync's onset, and the recovery hands back
+//! the picture after the next sync. The rule now reads the latch's
+//! position (`Console::run_to_picture_after_latch`) and this run names
+//! F+0; a still picture (E2's title) could not have shown it, a
+//! scrolling one does, 1.3 dots at the wrong frame here.
 
 use nes_console::{ines, Console, Picture};
 use ntsc_grid::CompositeFrame;
@@ -244,14 +246,8 @@ fn main() {
     }
     c.board.borrow_mut().pads[0].schedule = schedule;
     c.set_pad(0, nes_glue::controller::Buttons::from_byte(pad));
-    let mut ran = 0usize;
-    while c.board.borrow().pads[0].latches <= latch && ran < ceiling {
-        c.run_frames(1);
-        ran += 1;
-    }
-    assert!(c.board.borrow().pads[0].latches > latch, "latch {latch} was not reached in {ceiling} frames");
-    c.run_frames(1);
-    let chosen = c.frames.len() - 1;
+    let (chosen, pos) = c.run_to_picture_after_latch(latch, ceiling).unwrap_or_else(|e| panic!("{e}"));
+    println!("latch {latch} fell at PPU line {} dot {}, {} the vertical sync's onset", pos.line, pos.dot, if nes_console::after_vsync_onset(pos) { "after" } else { "before" });
     // Past F: the pair's second frame, the cross's F+2, and what a
     // synthesised record needs after its last slice.
     c.run_frames(gap + 5);

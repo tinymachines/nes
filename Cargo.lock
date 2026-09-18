@@ -1185,9 +1185,9 @@ dependencies = [
  "nes-glue",
  "ntsc-crt",
  "ntsc-decode",
- "ntsc-grid",
+ "ntsc-grid 0.1.0 (git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10)",
  "ntsc-source-cap",
- "ntsc-source-nes",
+ "ntsc-source-nes 0.1.0 (git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10)",
  "v2a03-dac",
  "v2a03-micro",
  "v2c02-fast",
@@ -1214,8 +1214,8 @@ dependencies = [
  "nes-glue",
  "ntsc-crt",
  "ntsc-decode",
- "ntsc-grid",
- "ntsc-source-nes",
+ "ntsc-grid 0.1.0 (git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10)",
+ "ntsc-source-nes 0.1.0 (git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10)",
  "ntsc-wasm",
  "pollster",
  "wgpu",
@@ -1257,19 +1257,28 @@ dependencies = [
 [[package]]
 name = "ntsc-crt"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.9#2fc4121dffd5d084cc39538a14723215971bce48"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10#3f332889227e1092517d83a9b9629baf202ef7d1"
 dependencies = [
  "ntsc-decode",
- "ntsc-grid",
+ "ntsc-grid 0.1.0 (git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10)",
 ]
 
 [[package]]
 name = "ntsc-decode"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.9#2fc4121dffd5d084cc39538a14723215971bce48"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10#3f332889227e1092517d83a9b9629baf202ef7d1"
 dependencies = [
- "ntsc-grid",
+ "ntsc-grid 0.1.0 (git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10)",
  "toml",
+]
+
+[[package]]
+name = "ntsc-grid"
+version = "0.1.0"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10#3f332889227e1092517d83a9b9629baf202ef7d1"
+dependencies = [
+ "nes-bus",
+ "num-rational",
 ]
 
 [[package]]
@@ -1284,11 +1293,21 @@ dependencies = [
 [[package]]
 name = "ntsc-source-cap"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.9#2fc4121dffd5d084cc39538a14723215971bce48"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10#3f332889227e1092517d83a9b9629baf202ef7d1"
 dependencies = [
- "ntsc-grid",
- "ntsc-source-nes",
+ "ntsc-grid 0.1.0 (git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10)",
+ "ntsc-source-nes 0.1.0 (git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10)",
  "ntsc-source-rgb",
+]
+
+[[package]]
+name = "ntsc-source-nes"
+version = "0.1.0"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10#3f332889227e1092517d83a9b9629baf202ef7d1"
+dependencies = [
+ "nes-bus",
+ "ntsc-grid 0.1.0 (git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10)",
+ "toml",
 ]
 
 [[package]]
@@ -1297,27 +1316,27 @@ version = "0.1.0"
 source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.9#2fc4121dffd5d084cc39538a14723215971bce48"
 dependencies = [
  "nes-bus",
- "ntsc-grid",
+ "ntsc-grid 0.1.0 (git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.9)",
  "toml",
 ]
 
 [[package]]
 name = "ntsc-source-rgb"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.9#2fc4121dffd5d084cc39538a14723215971bce48"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10#3f332889227e1092517d83a9b9629baf202ef7d1"
 dependencies = [
- "ntsc-grid",
+ "ntsc-grid 0.1.0 (git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10)",
  "toml",
 ]
 
 [[package]]
 name = "ntsc-wasm"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.9#2fc4121dffd5d084cc39538a14723215971bce48"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10#3f332889227e1092517d83a9b9629baf202ef7d1"
 dependencies = [
  "ntsc-decode",
- "ntsc-grid",
- "ntsc-source-nes",
+ "ntsc-grid 0.1.0 (git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10)",
+ "ntsc-source-nes 0.1.0 (git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.10)",
  "wasm-bindgen",
 ]
 
@@ -2407,8 +2426,8 @@ version = "0.1.0"
 dependencies = [
  "halfphi 0.1.6 (git+https://github.com/tinymachines/halfphi?tag=v0.1.6)",
  "nes-bus",
- "ntsc-grid",
- "ntsc-source-nes",
+ "ntsc-grid 0.1.0 (git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.9)",
+ "ntsc-source-nes 0.1.0 (git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.9)",
  "v2c02-netlist",
  "v2c02-sim",
 ]

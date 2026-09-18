@@ -13,7 +13,10 @@
 //! and `AT <latch> <hh>` lines are honoured, by latch index, exactly as
 //! the bridge honours them; the other words are the head's and are
 //! skipped. A summary line closes: polls, the histogram of clocks per
-//! poll, and the latch indices that took nine.
+//! poll, and the latch indices that took nine. POSITIONS=1 adds a line
+//! per latch, `P <index> <rise line> <rise dot> <fall line> <fall dot>`:
+//! where in the PPU's frame the strobe rose and fell, which the bench's
+//! `poll-line.py` measures on the part against the vertical sync.
 //!
 //!   cargo run --release -p nes-console --example pad-log -- rom.nes [frames] [script]
 
@@ -67,5 +70,12 @@ fn main() {
         *hist.entry(k).or_insert(0u32) += 1;
     }
     let nines: Vec<usize> = polls.iter().enumerate().filter(|(_, &k)| k == 9).map(|(i, _)| i).collect();
+    // POSITIONS=1: where in the PPU's frame each latch's strobe rose and
+    // fell (line, dot), the model's side of the bench's poll-line.py.
+    if std::env::var("POSITIONS").is_ok_and(|v| v == "1") {
+        for (i, (rise, fall)) in b.latch_positions.iter().enumerate() {
+            println!("P {i} {} {} {} {}", rise.line, rise.dot, fall.line, fall.dot);
+        }
+    }
     println!("# {} polls over {frames} frames; clocks per poll {hist:?}; nine at latches {nines:?}", polls.len());
 }

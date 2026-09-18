@@ -193,10 +193,16 @@ cargo run --release -p nes-console --example capture-score -- rom.nes [frames] [
                                   # is recorded. The bench's B1: SCRIPT=
                                   # (the bench script's SET and AT lines),
                                   # LATCH=n (the model's frame is the
-                                  # first after latch n), TRIGGER_SAMPLE=i
-                                  # (the record sliced from the trigger
-                                  # on, so the recovery's first full frame
-                                  # is the same frame on the part);
+                                  # picture the part's recovery hands back
+                                  # for a trigger at latch n, placed by
+                                  # where the latch fell against the
+                                  # vertical sync's onset, row 244 dot 280:
+                                  # Console::run_to_picture_after_latch,
+                                  # tests/latch_frame.rs, MUTATE=1 red),
+                                  # TRIGGER_SAMPLE=i (the record sliced
+                                  # from the trigger on, so the recovery's
+                                  # first full frame is that frame on the
+                                  # part);
                                   # SYNTH_TRIGGER=1 is the tool's own
                                   # green run on the synthesis, and
                                   # MUTATE_TRIGGER=1 (one frame late) is
@@ -212,7 +218,11 @@ cargo run --release -p nes-console --example split-score -- rom.nes [frames] [re
                                   # record, the still rows the status
                                   # bar and the moving rows the level;
                                   # then which of the model's frames the
-                                  # record's triggered frame is. SCRIPT,
+                                  # record's triggered frame is (F+0 on
+                                  # the first scrolling record once the
+                                  # frame was placed from the latch's
+                                  # position; F+1 under the earlier rule,
+                                  # which is how the rule was found). SCRIPT,
                                   # LATCH, TRIGGER_SAMPLE as above, GAP=n
                                   # frames apart; the synthetic roundtrip
                                   # is held (MUTATE_FRAME=1 and
