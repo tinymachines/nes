@@ -422,6 +422,68 @@ fn main() {
         regions.len(),
         regions.len()
     );
+    // PROFILE=<colour>[,<emphasis>]: one colour's luma row by row, on
+    // both sides, where the model draws it a settling distance clear of
+    // anything else. E2 read the part's luma low by about 0.045 on the
+    // regions high up the picture and by 0.028 to 0.040 on the ones at
+    // row 200 and below (exercise.md), and a region's rows and its
+    // colour move together there, so the two cannot be told apart. One
+    // colour down the frame separates them: a tilt inside a single
+    // colour is the picture's, a step between colours is the colour's.
+    if let Ok(v) = std::env::var("PROFILE") {
+        let (col, emp) = match v.split_once(',') {
+            Some((c, e)) => (u8::from_str_radix(c.trim_start_matches('$'), 16).expect("PROFILE colour"), e.parse().expect("PROFILE emphasis")),
+            None => (u8::from_str_radix(v.trim_start_matches('$'), 16).expect("PROFILE colour"), 0u8),
+        };
+        let ys = dec.decode_yuv(synth, 1, ACTIVE_ROWS - 1, WIDTH).y;
+        let yk = dec.decode_yuv(&rec.frame, 1, ACTIVE_ROWS - 1, WIDTH).y;
+        println!("the colour ${col:02x} emphasis {emp} row by row, {margin} dots clear of anything else (row, dots, model, part, part - model):");
+        let (mut n, mut sx, mut sy, mut sxx, mut sxy) = (0.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64);
+        let mut rows = Vec::new();
+        for row in 1..ACTIVE_ROWS {
+            let mut dots = Vec::new();
+            for d in margin..ACTIVE_DOTS - margin {
+                if (d - margin..=d + margin).all(|x| last.at(row, nes_bus::ACTIVE_FIRST_DOT + x) == (col, emp)) {
+                    dots.push(d);
+                }
+            }
+            if dots.len() < 16 {
+                continue;
+            }
+            let mean = |y: &[f32]| {
+                let (mut acc, mut k) = (0.0f64, 0.0f64);
+                for &d in &dots {
+                    for x in d * SAMPLES_PER_DOT..(d + 1) * SAMPLES_PER_DOT {
+                        acc += y[(row - 1) * WIDTH + x] as f64;
+                        k += 1.0;
+                    }
+                }
+                acc / k
+            };
+            let (a, b) = (mean(&ys), mean(&yk));
+            rows.push((row, dots.len(), a, b));
+            n += 1.0;
+            sx += row as f64;
+            sy += b - a;
+            sxx += (row * row) as f64;
+            sxy += row as f64 * (b - a);
+        }
+        for (row, k, a, b) in &rows {
+            println!("  {row:>3}  {k:>3}  {a:.4}  {b:.4}  {:+.4}", b - a);
+        }
+        if n >= 2.0 {
+            let d = n * sxx - sx * sx;
+            let slope = if d.abs() < 1e-9 { 0.0 } else { (n * sxy - sx * sy) / d };
+            println!(
+                "${col:02x} on {} rows, {} to {}: the part is {:+.4} on the mean, and the difference tilts {:+.4} every hundred rows",
+                rows.len(),
+                rows.first().unwrap().0,
+                rows.last().unwrap().0,
+                sy / n,
+                slope * 100.0
+            );
+        }
+    }
     let held = real.is_none();
     println!(
         "{} of {} regions within luma {tol_y}, hue {tol_hue} deg, saturation {}% (or {tol_sat_abs}); {}",

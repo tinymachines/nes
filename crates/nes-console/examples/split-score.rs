@@ -39,6 +39,13 @@
 //!      calls a replay's frame the model's by the two correlations.
 //!      Recorded on a real record and on the synthesis alike, not held
 //!      (see the section).
+//!   5. the part's triggered frame against the model's F-2 to F+2 over
+//!      only the samples where those five disagree with each other, as
+//!      an rms luma error with each candidate's gain and offset fitted
+//!      out. Measurement 4 answers which screen; where one sprite moves
+//!      it cannot answer which frame, since F-1 and F+1 agree everywhere
+//!      but the sprite. Held on the synthesis (the frame found must be
+//!      F), recorded on a real record.
 //!
 //! SCRIPT, LATCH, TRIGGER_SAMPLE and KNOBS as capture-score reads them.
 //! Without a record the part's side is synthesised from the model's own
@@ -63,6 +70,7 @@
 //! F+0; a still picture (E2's title) could not have shown it, a
 //! scrolling one does, 1.3 dots at the wrong frame here.
 
+use nes_bus::ACTIVE_DOTS;
 use nes_console::{ines, Console, Picture};
 use ntsc_grid::CompositeFrame;
 use ntsc_source_cap::ingest::{auto_level_nes, read_capture};
@@ -71,6 +79,8 @@ use ntsc_source_cap::{capture_model, front_end, recover_nes, Capture};
 const WIDTH: usize = 2048;
 const ROWS: usize = 240;
 const SAMPLES_PER_DOT: f64 = 8.0;
+/// The colour subcarrier's cycle on the recovery's grid.
+const CYCLE_SAMPLES: usize = 12;
 /// The widest shift looked for, in samples: twelve dots, under the
 /// sixteen-dot period of a tiled background, so a row of bricks cannot
 /// answer with its own repeat.
@@ -132,6 +142,28 @@ fn row_shift(a: &[f32], b: &[f32]) -> Row {
 /// Every row of `a` against the same row of `b`. Index 0 is picture row 1.
 fn shifts(a: &[f32], b: &[f32]) -> Vec<Row> {
     (0..ROWS - 1).map(|r| row_shift(&a[r * WIDTH..(r + 1) * WIDTH], &b[r * WIDTH..(r + 1) * WIDTH])).collect()
+}
+
+/// A box blur one colour subcarrier cycle wide, along each row: twelve
+/// samples on this grid (a dot is eight, and the PPU's dot clock is one
+/// and a half times the subcarrier), so the subcarrier and anything
+/// riding on its phase average away and what is left is the picture's
+/// content. Eight samples does NOT do it, which is how this was found:
+/// a box a dot wide left 6% of a still frame still separating the
+/// candidates by parity.
+fn blur_cycle(v: &[f32]) -> Vec<f32> {
+    let w = CYCLE_SAMPLES;
+    let mut out = vec![0.0f32; v.len()];
+    for row in v.chunks_exact(WIDTH).enumerate() {
+        let (r, line) = row;
+        for x in 0..WIDTH {
+            let lo = x.saturating_sub(w / 2);
+            let hi = (x + w / 2).min(WIDTH - 1);
+            let s: f32 = line[lo..=hi].iter().sum();
+            out[r * WIDTH + x] = s / (hi - lo + 1) as f32;
+        }
+    }
+    out
 }
 
 /// Pearson's r between two equal-length sample runs.
@@ -446,6 +478,195 @@ fn main() {
     // noiseless model that matches reads about its square root).
     println!("the part against itself {gap} frames on (Pearson r): {:.4}", pearson(&p0, &p1));
 
+    // 5. Only where the candidates differ from each other. A whole-frame
+    // correlation answers "which screen"; on a screen where one sprite
+    // moves it cannot answer "which frame", because F-1 and F+1 agree
+    // everywhere but the sprite: Duck Hunt's field moves about half a
+    // percent of its dots a frame, and 2026-09-19's records read F-1 and
+    // F+1 alike (r 0.94) and F worse (0.91), which is the frame's parity
+    // speaking, not its content. So: take the samples where the five
+    // candidates F-2..F+2 do not agree with each other (the decoded luma
+    // spread across them above DIFF, default 0.05, edges left out), fit
+    // each candidate's gain and offset to the part over the whole frame
+    // (the part's luma runs low, E2), and score each one there as an rms
+    // error. The same candidate's error over the samples OUTSIDE the
+    // mask is the measurement's own floor: the two picture chains'
+    // disagreement on a part of the screen that no candidate disputes.
+    // A winner whose error is near that floor while the others sit well
+    // above it is the frame the part drew.
+    let decide = |label: &str, frames: &[Vec<f32>], p0: &[f32], parts: (Vec<usize>, Vec<usize>)| -> Option<isize> {
+        let cands: Vec<isize> = vec![-2, -1, 0, 1, 2];
+        let rows = frames[0].len() / WIDTH;
+        let (mask, rest) = parts;
+        let total = rows * (WIDTH - 48);
+        println!(
+            "{label}: the candidates F-2..F+2 are told apart on {} samples of {total} ({:.3}% of the frame)",
+            mask.len(),
+            100.0 * mask.len() as f64 / total as f64
+        );
+        if mask.is_empty() {
+            println!("{label}: nothing separates the candidates, so no frame can be told from its neighbours");
+            return None;
+        }
+        // The part's own registration, fitted where no candidate is in
+        // dispute: the shift against the model's F alone would absorb
+        // the very difference being measured (a scrolling game's
+        // neighbouring frames differ by a shift, and the first version
+        // of this measurement was fooled by exactly that: MUTATE_FRAME=1
+        // went green). The undisputed samples are the same picture on
+        // every candidate, so the shift they give does not prefer one.
+        let shift = {
+            let f = &frames[2];
+            let mut best = (0isize, f64::MAX);
+            for dx in -24isize..=24 {
+                let acc: f64 = rest.iter().map(|&i| (f[i] as f64 - p0[(i as isize + dx) as usize] as f64).powi(2)).sum();
+                let e = (acc / rest.len() as f64).sqrt();
+                if e < best.1 {
+                    best = (dx, e);
+                }
+            }
+            println!("{label}: aligned on the {} samples no candidate disputes, {} samples over ({:+.3} dots)", rest.len(), best.0, best.0 as f64 / SAMPLES_PER_DOT);
+            best.0
+        };
+        let part = |i: usize| p0[(i as isize + shift) as usize];
+        // The gain and offset that best carry a candidate onto the part,
+        // least squares over every sample looked at.
+        let rms = |f: &[f32], at: &[usize]| {
+            let (n, mut sx, mut sy, mut sxx, mut sxy) = (rest.len() + mask.len(), 0.0f64, 0.0f64, 0.0f64, 0.0f64);
+            for &i in rest.iter().chain(mask.iter()) {
+                let (x, y) = (f[i] as f64, part(i) as f64);
+                sx += x;
+                sy += y;
+                sxx += x * x;
+                sxy += x * y;
+            }
+            let d = n as f64 * sxx - sx * sx;
+            let (a, b) = if d.abs() < 1e-12 { (1.0, 0.0) } else { ((n as f64 * sxy - sx * sy) / d, (sy * sxx - sx * sxy) / d) };
+            let acc: f64 = at.iter().map(|&i| (a * f[i] as f64 + b - part(i) as f64).powi(2)).sum();
+            (acc / at.len() as f64).sqrt()
+        };
+        // Each candidate at its OWN best alignment, a dot and a half
+        // either way. The colour phase turns with the alignment (a
+        // third of a subcarrier cycle is four samples on this grid, and
+        // a frame's phase step on this part is a third of a cycle too),
+        // so a candidate that only wins because the part sits a few
+        // samples over is a registration, not a frame.
+        let rms_at = |f: &[f32], dx: isize| {
+            let part = |i: usize| p0[(i as isize + dx) as usize];
+            let (n, mut sx, mut sy, mut sxx, mut sxy) = (rest.len() + mask.len(), 0.0f64, 0.0f64, 0.0f64, 0.0f64);
+            for &i in rest.iter().chain(mask.iter()) {
+                let (x, y) = (f[i] as f64, part(i) as f64);
+                sx += x;
+                sy += y;
+                sxx += x * x;
+                sxy += x * y;
+            }
+            let d = n as f64 * sxx - sx * sx;
+            let (a, b) = if d.abs() < 1e-12 { (1.0, 0.0) } else { ((n as f64 * sxy - sx * sy) / d, (sy * sxx - sx * sxy) / d) };
+            let acc: f64 = mask.iter().map(|&i| (a * f[i] as f64 + b - part(i) as f64).powi(2)).sum();
+            (acc / mask.len() as f64).sqrt()
+        };
+        let sweep: Vec<String> = cands
+            .iter()
+            .zip(frames.iter())
+            .map(|(&j, f)| {
+                let best = (-12isize..=12).map(|dx| (dx, rms_at(f, dx))).reduce(|a, b| if b.1 < a.1 { b } else { a }).unwrap();
+                format!("F{j:+} {:.4} at {:+} samples", best.1, best.0)
+            })
+            .collect();
+        println!("{label}: each candidate at its own best alignment: {}", sweep.join("  "));
+        let scored: Vec<(isize, f64, f64)> = cands.iter().zip(frames.iter()).map(|(&j, f)| (j, rms(f, &mask), rms(f, &rest))).collect();
+        let line: Vec<String> = scored.iter().map(|(j, e, _)| format!("F{j:+} {e:.4}")).collect();
+        println!("{label}: the luma's rms error there, part against model: {}", line.join("  "));
+        let best = scored.iter().copied().reduce(|a, b| if b.1 < a.1 { b } else { a }).unwrap();
+        let runner = scored.iter().filter(|s| s.0 != best.0).map(|s| s.1).fold(f64::MAX, f64::min);
+        println!(
+            "{label}: the frame the part drew is F{:+} (rms {:.4} there, the next candidate {:.4}, and the same frame reads {:.4} where no candidate disputes)",
+            best.0, best.1, runner, best.2, 
+        );
+        if (runner - best.1).abs() < 1e-6 {
+            println!("{label}: two candidates read the same, so this cannot name one of them");
+            return None;
+        }
+        Some(best.0)
+    };
+    let cands: Vec<isize> = vec![-2, -1, 0, 1, 2];
+    let frames: Vec<Vec<f32>> = cands.iter().map(|&j| model((chosen as isize + j) as usize)).collect();
+    let rows = frames[0].len() / WIDTH;
+    // Where the candidates differ in the decoded picture by more than
+    // DIFF (default 0.05): the samples the phase reading is made on.
+    let by_picture = || {
+        let diff: f32 = std::env::var("DIFF").ok().and_then(|v| v.parse().ok()).unwrap_or(0.05);
+        let (mut mask, mut rest) = (Vec::new(), Vec::new());
+        for y in 0..rows {
+            for x in 24..WIDTH - 24 {
+                let i = y * WIDTH + x;
+                let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+                for f in &frames {
+                    lo = lo.min(f[i]);
+                    hi = hi.max(f[i]);
+                }
+                if hi - lo > diff {
+                    mask.push(i);
+                } else {
+                    rest.push(i);
+                }
+            }
+        }
+        (mask, rest)
+    };
+    // Where the candidates differ in the PPU's own dots: exact, and
+    // blind to the colour phase by construction, which the decoded
+    // picture is not (a still frame's neighbours differ there on 4% of
+    // their samples, and no blur takes it out: the residue at an edge
+    // is a transient, not a sinusoid). A disputed dot claims its eight
+    // samples and a dot either side, since the decoder spreads an edge;
+    // the undisputed side stands five dots clear of any dispute, so the
+    // floor it gives is not that spread either.
+    let by_dots = || {
+        let entries: Vec<Vec<u16>> = cands.iter().map(|&j| c.frames[(chosen as isize + j) as usize].active_entries()).collect();
+        let mut disputed = vec![false; rows * WIDTH];
+        for r in 0..rows {
+            // Luma row r is picture row r + 1 (the comb wants both
+            // neighbours, so row 0 is not decoded).
+            let row = r + 1;
+            for d in 0..ACTIVE_DOTS {
+                let v = entries[0][row * ACTIVE_DOTS + d];
+                if entries.iter().any(|e| e[row * ACTIVE_DOTS + d] != v) {
+                    let lo = (d * SAMPLES_PER_DOT as usize).saturating_sub(SAMPLES_PER_DOT as usize);
+                    let hi = ((d + 2) * SAMPLES_PER_DOT as usize).min(WIDTH);
+                    for x in lo..hi {
+                        disputed[r * WIDTH + x] = true;
+                    }
+                }
+            }
+        }
+        let clear = 5 * SAMPLES_PER_DOT as usize;
+        let (mut mask, mut rest) = (Vec::new(), Vec::new());
+        for y in 0..rows {
+            for x in 24..WIDTH - 24 {
+                let i = y * WIDTH + x;
+                if disputed[i] {
+                    mask.push(i);
+                } else if !disputed[y * WIDTH + x.saturating_sub(clear)..y * WIDTH + (x + clear).min(WIDTH)].iter().any(|&d| d) {
+                    rest.push(i);
+                }
+            }
+        }
+        (mask, rest)
+    };
+    // The two readings are of different things, and the still record
+    // that raised the question could not tell them apart: at the
+    // decoder's own resolution the neighbouring frames differ by the
+    // colour subcarrier's phase, which alternates with the PPU's frame
+    // parity while a game renders, so F-2, F and F+2 read one number
+    // and F-1 and F+1 the other WHATEVER is drawn. Blurred to a dot
+    // that phase is gone and only what moved is left.
+    println!("5. which frame, two ways: the colour phase (the decoded picture where the candidates differ, which alternates with the PPU's frame parity and so names a parity, not a frame) and what moved (the dots the candidates draw differently, scored on the picture blurred over a subcarrier cycle)");
+    let phase = decide("the colour phase", &frames, &p0, by_picture());
+    let blurred: Vec<Vec<f32>> = frames.iter().map(|f| blur_cycle(f)).collect();
+    let content = decide("what moved", &blurred, &blur_cycle(&p0), by_dots());
+
     if real.is_none() {
         let mut red = Vec::new();
         if m.first_moving.is_none() {
@@ -461,8 +682,14 @@ fn main() {
         if found.map(|(j, _)| j) != Some(0) {
             red.push(format!("the frame found is {:?}, not F", found.map(|(j, _)| j)));
         }
+        if content != Some(0) {
+            red.push(format!("the frame found where the candidates' content differs is {content:?}, not F"));
+        }
+        if phase != Some(0) {
+            red.push(format!("the frame found by the colour phase is {phase:?}, not F"));
+        }
         if red.is_empty() {
-            println!("the synthetic roundtrip holds: same bracket, same advance, the frame found is F");
+            println!("the synthetic roundtrip holds: same bracket, same advance, the frame found is F by the scroll and where the candidates disagree");
         } else {
             for r in &red {
                 println!("RED: {r}");

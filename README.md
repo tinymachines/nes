@@ -226,7 +226,15 @@ cargo run --release -p nes-console --example capture-score -- rom.nes [frames] [
                                   # luma-row step, frames 122;
                                   # SYNTH_OUT=path writes the synthesis
                                   # as a u8 record with its .toml, which
-                                  # the bench's fake scope serves
+                                  # the bench's fake scope serves;
+                                  # PROFILE=$cc reports one colour's luma
+                                  # row by row on both sides, over the
+                                  # dots the model draws clear of anything
+                                  # else: a tilt inside one colour is the
+                                  # picture's, a step between colours at
+                                  # the same rows is the colour's (which
+                                  # is what the part's low luma turned out
+                                  # to be, nes-bench open-items)
 cargo run --release -p nes-console --example split-score -- rom.nes [frames] [record.u8 rate]
                                   # the split: every picture row's
                                   # horizontal shift between two frames,
@@ -244,7 +252,25 @@ cargo run --release -p nes-console --example split-score -- rom.nes [frames] [re
                                   # is held (MUTATE_FRAME=1 and
                                   # MUTATE_STILL=1 red), a real record
                                   # recorded; nes-bench/tools/split-score.py
-                                  # drives it from a run
+                                  # drives it from a run.
+                                  # It also scores the candidates F-2..F+2
+                                  # two ways where they differ: on the dots
+                                  # they draw differently (what moved), and
+                                  # on the decoded picture (the colour
+                                  # phase, which alternates with the PPU's
+                                  # frame parity and so names a parity, not
+                                  # a frame). A still screen can only
+                                  # answer the second, which is how Duck
+                                  # Hunt's field read F-1 and F+1 alike
+cargo run --release -p nes-console --example frame-motion -- rom.nes [frames]
+                                  # how much of the picture moves, frame
+                                  # by frame, under SCRIPT's own AT lines:
+                                  # the probe that picks the latch for a
+                                  # capture that has to tell one frame from
+                                  # its neighbour. LATCH=n also names the
+                                  # picture that latch lands on, SHOW=dir
+                                  # with MARK=a-b writes those frames
+                                  # decoded
 cargo build --release -p nes-shell && target/release/nes-shell rom.nes
                                   # the console in a window (a display
                                   # session, a GPU): arrows, Z and X for
