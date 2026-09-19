@@ -362,6 +362,19 @@ fn main() {
     // in opposite directions), where a clean synthesis should come near
     // 1; the recovery's anchor is where it should be, so the cause is
     // not yet named. Recorded, not held.
+    // DUMP=<prefix>: the part's triggered frame and the model's F as
+    // greyscale PGM (decoded luma, WIDTH wide, every row), to look at.
+    if let Ok(prefix) = std::env::var("DUMP") {
+        let pgm = |v: &[f32], path: String| {
+            let rows = v.len() / WIDTH;
+            let mut out = format!("P5 {WIDTH} {rows} 255\n").into_bytes();
+            out.extend(v.iter().map(|&y| (y.clamp(0.0, 1.0) * 255.0) as u8));
+            std::fs::write(&path, out).expect("DUMP");
+            println!("wrote {path}");
+        };
+        pgm(&p0, format!("{prefix}-part.pgm"));
+        pgm(&model(chosen), format!("{prefix}-model.pgm"));
+    }
     let mut corr: Vec<(isize, f64)> = Vec::new();
     for j in [-1isize, 0, 1, 2, far as isize] {
         corr.push((j, pearson(&model((chosen as isize + j) as usize), &p0)));
