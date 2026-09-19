@@ -47,6 +47,8 @@
 //! run before any capture exists. MUTATE_TRIGGER=1 slices one frame
 //! late and must be red across the bars cartridge's luma-row step.
 //!
+//! SHOW=path.ppm writes the chosen frame decoded, for a look.
+//!
 //! With KNOBS carrying `[warmth]` and `[warmth_curve]` the model's
 //! encoded frames are scaled about blanking by the part's picture gain
 //! at the seconds it had been on (src/knobs.rs), before the front end,
@@ -79,12 +81,66 @@ struct Region {
     x1: usize,
 }
 
-/// The largest flat rectangle per distinct (colour, emphasis): runs of
-/// one value at least 8 dots long on each row, merged over consecutive
-/// rows where the runs overlap by 8 dots or more (the extent kept is
-/// the intersection: a bar's edges may step from row to row, as
-/// full_palette's do), at least 6 rows and 12 dots in the end.
+/// The largest flat rectangle per distinct (colour, emphasis): for each
+/// value in the frame, the all-that-value rectangle of greatest area
+/// (the maximal rectangles of its mask, row by row as a histogram of
+/// run heights), at least 6 rows and `2 * margin + 10` dots, the first
+/// found on a tie. Until 2026-09-19 the rows were merged greedily, each
+/// following the first overlapping run and keeping the intersection,
+/// which is not the largest rectangle: on Duck Hunt's field a tree's
+/// leaves cut the whole sky down to an eight-dot sliver at the left
+/// edge, and the sky was never scored. On a screen of simple shapes
+/// (the bars, Super Mario Bros.' title) the two can pick different
+/// rectangles of the same colour; MUTATE_REGIONS=1 runs the old merge.
 fn regions(f: &DotFrame, margin: usize) -> Vec<Region> {
+    if std::env::var("MUTATE_REGIONS").is_ok_and(|v| v == "1") {
+        return regions_greedy(f, margin);
+    }
+    let mut keys = std::collections::BTreeSet::new();
+    for row in 0..ACTIVE_ROWS {
+        for x in 0..ACTIVE_DOTS {
+            keys.insert(f.at(row, x + 1));
+        }
+    }
+    let min_w = 2 * margin + 10;
+    let mut out = Vec::new();
+    for (c, e) in keys {
+        let mut h = vec![0usize; ACTIVE_DOTS];
+        let mut best: Option<Region> = None;
+        for row in 0..ACTIVE_ROWS {
+            for (x, hx) in h.iter_mut().enumerate() {
+                *hx = if f.at(row, x + 1) == (c, e) { *hx + 1 } else { 0 };
+            }
+            // The widest rectangle under each bar: a stack of rising heights.
+            let mut stack: Vec<(usize, usize)> = Vec::new(); // (start x, height)
+            for x in 0..=ACTIVE_DOTS {
+                let hx = if x < ACTIVE_DOTS { h[x] } else { 0 };
+                let mut start = x;
+                while let Some(&(s0, sh)) = stack.last() {
+                    if sh < hx {
+                        break;
+                    }
+                    stack.pop();
+                    let (w, rows) = (x - s0, sh);
+                    if rows >= 6 && w >= min_w && best.as_ref().is_none_or(|b| w * rows > (b.x1 - b.x0) * (b.row1 - b.row0)) {
+                        best = Some(Region { colour: c, emphasis: e, row0: row + 1 - rows, row1: row + 1, x0: s0, x1: x });
+                    }
+                    start = s0;
+                }
+                if hx > 0 {
+                    stack.push((start, hx));
+                }
+            }
+        }
+        out.extend(best);
+    }
+    out
+}
+
+/// The merge used until 2026-09-19 (MUTATE_REGIONS=1): runs of one
+/// value at least 8 dots long on each row, merged over consecutive rows
+/// where the runs overlap by 8 dots or more, the intersection kept.
+fn regions_greedy(f: &DotFrame, margin: usize) -> Vec<Region> {
     let mut best: std::collections::BTreeMap<(u8, u8), Region> = Default::default();
     let mut open: Vec<Region> = Vec::new();
     for row in 0..ACTIVE_ROWS {
@@ -249,6 +305,17 @@ fn main() {
     let synth = &synth;
     let margin = margin_dots(picture.decoder());
     let regions = regions(last, margin);
+    // SHOW=path.ppm: the chosen frame decoded (no CRT), for a look at
+    // which screen a latch lands on before a script goes to the bench.
+    if let Ok(path) = std::env::var("SHOW") {
+        let mut p = Picture::decode_only();
+        let mut shown = None;
+        for f in &c.frames[chosen.saturating_sub(2)..=chosen] {
+            shown = Some(p.push(f));
+        }
+        std::fs::write(&path, nes_console::picture::decoded_ppm(&shown.unwrap().decoded)).expect("SHOW");
+        println!("wrote frame {chosen} decoded to {path}");
+    }
     println!(
         "{} frames of {}; {} flat regions of distinct (colour, emphasis) in the last frame ({:?}), scored {margin} dots in from their edges (the decoder's chroma settling); the synthesis {}",
         frames, args[1], regions.len(), last.parity, if raw { "raw" } else { "through the card model's front end" }
