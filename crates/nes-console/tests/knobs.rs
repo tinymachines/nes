@@ -3,11 +3,13 @@
 //! name; a fitted knob without its residual is refused; and the one
 //! knob the model acts on today reaches the scheduler (a knob that
 //! reaches nothing is not a knob). MUTATE=1 feeds the scheduler the
-//! same alignment for both runs and the last test must go red.
+//! same alignment for both runs and the last test must go red. The
+//! warmth reaches the encoded picture and only the picture;
+//! MUTATE_WARMTH=1 leaves the frame unscaled and must go red.
 
 use nes_bus::cart::{Mirroring, Nrom};
 use nes_console::testrom::{chr, pad_program};
-use nes_console::{Alignment, Console, Knobs};
+use nes_console::{Alignment, Console, Knobs, Picture};
 
 const FILE: &str = r#"
 # runs/20260918-000521/knobs.toml
@@ -120,4 +122,59 @@ fn the_ram_fill_knob_reaches_the_board() {
     assert_eq!((b.wram.read(0x0000), b.wram.read(0x07ff)), (0xff, 0xff), "the fill did not reach the work RAM");
     let e = Knobs::parse("[ram]\nfill = 256\nsource = \"authored\"\nby = \"x\"\n", "k.toml").unwrap_err();
     assert!(e.contains("not a byte"), "{e}");
+}
+
+const WARM: &str = "[warmth]\nseconds_on = 2708\nsource = \"measured\"\nby = \"20260918-203018 head.log\"\n\n[warmth_curve]\ndepth = 0.0214\ntau_s = 1050\nsource = \"fitted\"\nby = \"warm-up series 20260918-194516..203018\"\nresidual = 0.001\n";
+
+#[test]
+fn the_warmth_is_the_seconds_on_the_curve() {
+    let k = Knobs::parse(WARM, "k.toml").unwrap();
+    let g = k.warmth_gain().unwrap();
+    let want = 1.0 - 0.0214 * (1.0 - (-2708.0f64 / 1050.0).exp());
+    assert!((g - want).abs() < 1e-12, "{g} against {want}");
+    assert!(k.describe().contains("warmth 2708 s on, measured by 20260918-203018 head.log"), "{}", k.describe());
+    assert!(k.describe().contains("fitted by warm-up series 20260918-194516..203018 (residual 0.001)"), "{}", k.describe());
+    // Cold is gain one; the plateau is one less the depth.
+    let c = k.warmth_curve.as_ref().unwrap();
+    assert_eq!(c.gain(0.0), 1.0);
+    assert!((c.gain(1e9) - (1.0 - 0.0214)).abs() < 1e-12);
+    // The seconds without the curve say nothing, and are refused.
+    let e = Knobs::parse("[warmth]\nseconds_on = 5\nsource = \"measured\"\nby = \"x\"\n", "k.toml").unwrap_err();
+    assert!(e.contains("without [warmth_curve]"), "{e}");
+    // The curve alone is kept and acts on nothing.
+    let only = WARM.split("[warmth_curve]").nth(1).unwrap();
+    let k = Knobs::parse(&format!("[warmth_curve]{only}"), "k.toml").unwrap();
+    assert!(k.warmth_curve.is_some() && k.warmth_gain().is_none());
+    let e = Knobs::parse("[warmth_curve]\ndepth = 0.02\ntau_s = 0\nsource = \"authored\"\nby = \"x\"\n", "k.toml").unwrap_err();
+    assert!(e.contains("not positive"), "{e}");
+}
+
+#[test]
+fn the_warmth_knob_reaches_the_picture_and_only_the_picture() {
+    let k = Knobs::parse(WARM, "k.toml").unwrap();
+    let g = k.warmth_gain().unwrap() as f32;
+    let cart = Nrom::new(pad_program(false), chr(), Mirroring::Vertical).unwrap();
+    let mut c = Console::new(Box::new(cart), None, Alignment::default());
+    c.run_frames(2);
+    let mut picture = Picture::decode_only();
+    let cold = picture.encode(c.frames.last().unwrap());
+    let mut warm = cold.clone();
+    if !std::env::var("MUTATE_WARMTH").is_ok_and(|v| v == "1") {
+        k.apply_warmth(&mut warm);
+    }
+    let blank = ntsc_source_nes::levels::BLANK;
+    let (mut moved, mut picture_samples) = (0usize, 0usize);
+    for (a, b) in cold.lines.iter().zip(&warm.lines) {
+        // The sync and the burst are the levels the scorer reads: untouched.
+        assert_eq!(a.samples[..a.active_start], b.samples[..b.active_start], "the warmth reached the sync or the burst");
+        for (x, y) in a.samples[a.active_start..].iter().zip(&b.samples[b.active_start..]) {
+            if (x - blank).abs() > 0.05 && *x > blank {
+                picture_samples += 1;
+                assert!(((y - blank) - (x - blank) * g).abs() < 1e-5, "a picture sample {x} came out {y}, not scaled by {g} about blanking");
+                moved += (x != y) as usize;
+            }
+        }
+    }
+    assert!(picture_samples > 1000, "the frame has a picture to scale ({picture_samples} samples above blanking)");
+    assert!(moved > 0, "the warmth knob moved nothing in the picture (MUTATE_WARMTH=1 leaves it cold: red)");
 }

@@ -34,6 +34,21 @@
 //!   model does). A fill is an authored stand-in until a cartridge of
 //!   our own shows the part's pattern; `Knobs::apply` writes it into
 //!   the console after construction, and every runner calls it.
+//! - `[warmth]` `seconds_on`: how long the part had been powered when
+//!   its record was triggered, measured off the run's `head.log` (the
+//!   head's last `power on` before the trigger). With `[warmth_curve]`
+//!   `depth`, `tau_s` it sets the model's picture gain,
+//!   `1 - depth * (1 - exp(-seconds_on / tau_s))`: the part's picture
+//!   shrinks against its sync by about two percent over its first half
+//!   hour and then holds (nes-bench docs/exercise.md, the warm-up
+//!   series 2026-09-18), luma and saturation together, the hue not at
+//!   all. The curve is fitted (tools/warmth-fit.py in nes-bench, its
+//!   residual in the file); the gain is applied to the model's encoded
+//!   picture, everything after the burst scaled about blanking, before
+//!   the card model's front end (`Knobs::apply_warmth`), so a record
+//!   taken an hour warm is scored against the model at that warmth and
+//!   the offset that is left is the part's own. `[warmth]` without the
+//!   curve is refused; the curve alone is kept and not acted on.
 //!
 //! A knob that reaches nothing is not a knob: `tests/knobs.rs` moves
 //! the alignment and the scheduler must move with it.
@@ -84,6 +99,22 @@ pub struct Knobs {
     pub capture: Option<Capture>,
     pub ram_fill: Option<(u8, Source)>,
     pub ram_seed: Option<(u32, Source)>,
+    pub warmth: Option<(f64, Source)>,
+    pub warmth_curve: Option<WarmthCurve>,
+}
+
+/// The part's picture gain against the seconds it has been on.
+#[derive(Clone, PartialEq, Debug)]
+pub struct WarmthCurve {
+    pub depth: f64,
+    pub tau_s: f64,
+    pub source: Source,
+}
+
+impl WarmthCurve {
+    pub fn gain(&self, seconds_on: f64) -> f64 {
+        1.0 - self.depth * (1.0 - (-seconds_on / self.tau_s).exp())
+    }
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -270,11 +301,33 @@ impl Knobs {
                             }
                         }
                     }
-                    other => return Err(format!("a table this reader does not know: [{other}] (it knows [alignment], [capture], [ram])")),
+                    "warmth" => {
+                        t.only(&["seconds_on"])?;
+                        let sec = t.float("seconds_on")?;
+                        if sec.is_nan() || sec < 0.0 {
+                            return Err(format!("[warmth] `seconds_on` {sec} is negative"));
+                        }
+                        knobs.warmth = Some((sec, t.source()?));
+                    }
+                    "warmth_curve" => {
+                        t.only(&["depth", "tau_s"])?;
+                        let (depth, tau_s) = (t.float("depth")?, t.float("tau_s")?);
+                        if !(0.0..0.5).contains(&depth) {
+                            return Err(format!("[warmth_curve] `depth` {depth} is not in 0..0.5"));
+                        }
+                        if tau_s.is_nan() || tau_s <= 0.0 {
+                            return Err(format!("[warmth_curve] `tau_s` {tau_s} is not positive"));
+                        }
+                        knobs.warmth_curve = Some(WarmthCurve { depth, tau_s, source: t.source()? });
+                    }
+                    other => return Err(format!("a table this reader does not know: [{other}] (it knows [alignment], [capture], [ram], [warmth], [warmth_curve])")),
                 }
                 Ok(())
             })();
             r.map_err(|e| format!("{path}: {e}"))?;
+        }
+        if knobs.warmth.is_some() && knobs.warmth_curve.is_none() {
+            return Err(format!("{path}: [warmth] without [warmth_curve]: the seconds say nothing without the curve"));
         }
         Ok(knobs)
     }
@@ -313,7 +366,44 @@ impl Knobs {
         if let Some((sd, s)) = &self.ram_seed {
             lines.push(format!("  ram pattern from seed {sd} at power-on, {}", s.describe()));
         }
+        if let Some(w) = &self.warmth_curve {
+            lines.push(format!("  warmth curve depth {} tau {} s, {}", w.depth, w.tau_s, w.source.describe()));
+        }
+        if let (Some((sec, s)), Some(g)) = (&self.warmth, self.warmth_gain()) {
+            lines.push(format!("  warmth {sec} s on, {}: the model's picture at gain {g:.4}", s.describe()));
+        }
         lines.join("\n")
+    }
+
+    /// The model's picture gain for the part's warmth, when the file
+    /// carries both the seconds and the curve.
+    pub fn warmth_gain(&self) -> Option<f64> {
+        match (&self.warmth, &self.warmth_curve) {
+            (Some((sec, _)), Some(w)) => Some(w.gain(*sec)),
+            _ => None,
+        }
+    }
+
+    /// The warmth on an encoded frame: every sample after the burst
+    /// (the picture, its borders and the porch, which sits at blanking
+    /// and stays there) scaled about blanking by the gain; the sync and
+    /// the burst are left as they are, which is what the scorer's levels
+    /// and the decoder's phase are read from, and so is a sync pulse
+    /// after the burst's place (the vertical sync's lines: anything
+    /// nearer the sync level than blanking). Returns the gain applied.
+    pub fn apply_warmth(&self, frame: &mut ntsc_grid::CompositeFrame) -> Option<f64> {
+        let g = self.warmth_gain()?;
+        let blank = ntsc_source_nes::levels::BLANK;
+        let sync_below = (blank + ntsc_source_nes::levels::SYNC) / 2.0;
+        for line in &mut frame.lines {
+            let from = line.active_start.min(line.samples.len());
+            for s in &mut line.samples[from..] {
+                if *s > sync_below {
+                    *s = blank + (*s - blank) * g as f32;
+                }
+            }
+        }
+        Some(g)
     }
 
     /// The knobs that act after construction: the work RAM's power-on

@@ -47,6 +47,11 @@
 //! run before any capture exists. MUTATE_TRIGGER=1 slices one frame
 //! late and must be red across the bars cartridge's luma-row step.
 //!
+//! With KNOBS carrying `[warmth]` and `[warmth_curve]` the model's
+//! encoded frames are scaled about blanking by the part's picture gain
+//! at the seconds it had been on (src/knobs.rs), before the front end,
+//! and the report says so.
+//!
 //! Tolerances (docs/n6-plan.md, stated before measuring): synthetic,
 //! luma within 0.01, hue within 1.0 degree where the synthesis has a
 //! hue (saturation above 0.02; a grey has none), saturation within 5
@@ -225,7 +230,18 @@ fn main() {
 
     // The synthesis: every frame encoded in order, the phase carried.
     let mut picture = Picture::decode_only();
-    let encoded: Vec<CompositeFrame> = c.frames.iter().map(|f| picture.encode(f)).collect();
+    let mut encoded: Vec<CompositeFrame> = c.frames.iter().map(|f| picture.encode(f)).collect();
+    // The part's warmth (KNOBS [warmth] + [warmth_curve]): the model's
+    // picture at the gain the part had when its record was triggered,
+    // on every frame, so the synthetic capture carries it too.
+    if let Ok(Some(k)) = nes_console::Knobs::from_env() {
+        if let Some(g) = k.warmth_gain() {
+            for f in &mut encoded {
+                k.apply_warmth(f);
+            }
+            println!("the model's picture at gain {g:.4} for the part's warmth");
+        }
+    }
     let chosen = c.frames.len() - if synth_trigger { 3 } else { 1 };
     let last = &c.frames[chosen];
     let raw = std::env::var("SYNTH_RAW").is_ok_and(|v| v == "1");

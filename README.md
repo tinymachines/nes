@@ -161,13 +161,17 @@ cargo run --release -p nes-console --example cal-screens -- out_dir
 # Every runner below takes KNOBS=runs/<stamp>/knobs.toml, the bench's
 # knobs file (nes-console/src/knobs.rs): the model's alignment and its
 # work RAM's power-on pattern (a fill byte or a seeded pattern: the model's
-# blank RAM is a knob, not a fact), each with
+# blank RAM is a knob, not a fact), and the part's warmth ([warmth]
+# seconds on, measured off the head's logs, on [warmth_curve], the
+# picture gain fitted to the bench's warm-up series: capture-score
+# scales the model's encoded picture about blanking by it), each with
 # where it came from (measured, authored or fitted, and by what), read
 # at the start and printed, so a run's report carries its sources; a
 # key or table the reader does not know is refused by name, a fitted
 # knob without its residual too. tests/knobs.rs: the shape parses, the
 # refusals fire, and the alignment knob moves the scheduler (MUTATE=1
-# feeds both runs one alignment and must go red).
+# feeds both runs one alignment and must go red), and the warmth reaches
+# the picture and not the sync or the burst (MUTATE_WARMTH=1 must go red).
 cargo run -p nes-console --example knobs -- runs/<stamp>/knobs.toml
                                   # the file read back and described,
                                   # or refused (exit 1); what nes-bench's
