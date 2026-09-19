@@ -306,7 +306,10 @@ fn main() {
             // so the first full frame after the slice is F.
             let first = chosen - 2 + mutate_frame;
             let tail: Vec<&CompositeFrame> = encoded[first..first + gap + 5].iter().collect();
-            let cap = capture_model(&tail, SCOPE_RATE, 5.0, 0.020, 0.002, 6);
+            // SYN_RATE, SYN_PPM, SYN_DC, SYN_NOISE: the synthetic record's
+            // stand-in parameters, overridable to find what costs what.
+            let knob = |k: &str, d: f64| std::env::var(k).ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(d);
+            let cap = capture_model(&tail, knob("SYN_RATE", SCOPE_RATE), knob("SYN_PPM", 5.0), knob("SYN_DC", 0.020) as f32, knob("SYN_NOISE", 0.002) as f32, 6);
             let per_frame = cap.samples.len() / tail.len();
             let trig = per_frame + per_frame / 2;
             println!("part: synthesised from the model's frames {first}.. through the card model at {SCOPE_RATE} Hz, sliced at {trig} as a trigger would{}", if mutate_frame == 1 { " (MUTATE_FRAME: one frame late)" } else { "" });
@@ -357,11 +360,13 @@ fn main() {
     // every frame, while the part against itself reads 0.999: the two
     // picture chains differ at fine detail, not the frames), 0.72 to
     // 0.78 thirty frames on, 0.66 against a record with Right dropped.
-    // OPEN: the synthetic roundtrip
-    // reads only 0.77 at F+0 and the same at F+1 (each best a row off,
-    // in opposite directions), where a clean synthesis should come near
-    // 1; the recovery's anchor is where it should be, so the cause is
-    // not yet named. Recorded, not held.
+    // The synthetic roundtrip read only 0.77 here, tied between F and
+    // F+1, until ntsc-crt v0.2.12: the recovery assumed every frame began
+    // at subcarrier origin 0 and slid a frame that began a third of a
+    // cycle on by half a dot to make it so (the registration below read
+    // 4 samples, r 1.0000 there). It reads 1.0000 at F now, and the part
+    // lines up a steady quarter dot over (1 to 3 samples on 8 records
+    // from three sessions), recorded, not fitted.
     // DUMP=<prefix>: the part's triggered frame and the model's F as
     // greyscale PGM (decoded luma, WIDTH wide, every row), to look at.
     if let Ok(prefix) = std::env::var("DUMP") {
@@ -374,6 +379,30 @@ fn main() {
         };
         pgm(&p0, format!("{prefix}-part.pgm"));
         pgm(&model(chosen), format!("{prefix}-model.pgm"));
+    }
+    // The registration: the horizontal shift, in decoded samples (eight
+    // to a dot), that best lines the part's frame up with the model's F,
+    // searched a dot either way. The synthetic roundtrip reads 0 since
+    // ntsc-crt v0.2.12 (the recovery measures the frame's subcarrier
+    // origin instead of assuming it, and before read 4, half a dot).
+    {
+        let m = model(chosen);
+        let rows = m.len() / WIDTH;
+        let mut best = (0isize, -2.0f64);
+        for dx in -8isize..=8 {
+            let (mut a, mut b) = (Vec::new(), Vec::new());
+            for y in 0..rows {
+                for x in 16..WIDTH - 16 {
+                    a.push(m[y * WIDTH + x]);
+                    b.push(p0[y * WIDTH + (x as isize + dx) as usize]);
+                }
+            }
+            let r = pearson(&a, &b);
+            if r > best.1 {
+                best = (dx, r);
+            }
+        }
+        println!("the registration: the part's frame lines up with the model's F {} samples over ({:+.3} dots), r {:.4} there", best.0, best.0 as f64 / SAMPLES_PER_DOT, best.1);
     }
     let mut corr: Vec<(isize, f64)> = Vec::new();
     for j in [-1isize, 0, 1, 2, far as isize] {
