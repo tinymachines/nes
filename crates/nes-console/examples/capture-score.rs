@@ -113,8 +113,7 @@ fn regions(f: &DotFrame, margin: usize) -> Vec<Region> {
             }
             // The widest rectangle under each bar: a stack of rising heights.
             let mut stack: Vec<(usize, usize)> = Vec::new(); // (start x, height)
-            for x in 0..=ACTIVE_DOTS {
-                let hx = if x < ACTIVE_DOTS { h[x] } else { 0 };
+            for (x, &hx) in h.iter().chain(std::iter::once(&0)).enumerate() {
                 let mut start = x;
                 while let Some(&(s0, sh)) = stack.last() {
                     if sh < hx {
