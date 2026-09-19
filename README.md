@@ -16,6 +16,21 @@ anything.
 
 ## Status
 
+The boards the console has are NROM (mapper 0), MMC3 (4) and GxROM
+(66). MMC3 arrived 2026-09-20 for the games that bank, Super Mario
+Bros. 2 and 3 among them: PRG and CHR in banks either way up, mirroring
+under software, and the scanline counter that watches PPU A12 and pulls
+/IRQ low, which is how those games split the screen. Four of blargg's
+six `mmc3_test_2` ROMs pass and `tests/mmc3.rs` names what the other two
+say: `6-MMC3_alt` is the other chip revision (his Crystalis; this board
+is the one his Super Mario Bros. 3 is on, and `5-MMC3` holds it), and
+`4-scanline_timing` fails on where inside a CPU cycle the console hands
+a cartridge's /IRQ to the core, not on the board's count, which
+`2-details` passes and a purpose-written cartridge confirms from
+outside at 241 clocks a frame. Getting there needed the 2C02's stepper
+to fetch the sprite slots it will not draw, since a line with no sprites
+still moves A12 on the part (2c02 @ 10b9089).
+
 N8 (the shell) is built and gated as far as a box without a screen can
 gate it (`docs/n8-report.md`): `nes-shell rom.nes` puts the console in
 a window with the three-line comb decode and the five CRT stages as
@@ -129,7 +144,8 @@ cargo test --workspace            # every part against its datasheet,
                                   # red, its own variable because the
                                   # 2A03 rung reads MUTATE itself)
 cargo run --release -p nes-console --example run-rom -- rom.nes [frames] [out.ppm]
-                                  # an NROM or GxROM ROM through the console: the
+                                  # an NROM, MMC3 or GxROM ROM through the
+                                  # console: the
                                   # last frame as PPM, the rate, and
                                   # blargg's $6000 report if there is one;
                                   # ALIGN=cpu,ppu picks another power-on
@@ -186,6 +202,14 @@ PAD=a5 cargo run --release -p nes-console --example pad-log -- rom.nes [frames] 
                                   # clock, measured on the 2A03's die and
                                   # held on its rung; tests/pad_log.rs
                                   # records the count, MUTATE_HELD=1 red
+cargo run --release -p nes-console --example mmc3-probe -- rom.nes [frames]
+                                  # where an MMC3 board's counter is
+                                  # clocked, in the PPU's own frame: the
+                                  # position of every filtered A12 rise
+                                  # with the counter and latch it left.
+                                  # A game's split rides on this, and
+                                  # blargg's 4-scanline_timing measures
+                                  # the same thing from inside
 cargo run --release -p nes-console --example bench-script -- rom.nes script.txt [tail]
                                   # a bench script played with its time:
                                   # WAIT s S runs s seconds of master

@@ -5,7 +5,7 @@
 //! trainer, four-screen, PAL, every other mapper) is refused by name: a
 //! silent fallback here would be a plausible wrong console.
 
-use nes_bus::cart::{Cartridge, Gxrom, Mirroring, Nrom};
+use nes_bus::cart::{Cartridge, Gxrom, Mirroring, Mmc3, Nrom};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ines {
@@ -62,17 +62,25 @@ impl Ines {
     }
 
     /// The cartridge the header names, boxed for the console: mapper 0
-    /// as `Nrom`, mapper 66 as `Gxrom`, anything else refused by name.
+    /// as `Nrom`, mapper 4 as `Mmc3`, mapper 66 as `Gxrom`, anything
+    /// else refused by name.
     pub fn cart(&self) -> Result<Box<dyn Cartridge>, String> {
         match self.mapper {
             0 => Ok(Box::new(self.nrom()?)),
+            4 => {
+                // The CHR RAM board hands MMC3 an empty CHR and it keeps
+                // the 8 KiB itself, banked: `owns_chr_ram` then tells the
+                // Board not to keep a second copy outside the cartridge.
+                let chr = if self.chr_ram { Vec::new() } else { self.chr.clone() };
+                Ok(Box::new(Mmc3::new(self.prg.clone(), chr, self.mirroring)?))
+            }
             66 => {
                 if self.chr_ram {
                     return Err("mapper 66 with CHR RAM is not a board this console has".into());
                 }
                 Ok(Box::new(Gxrom::new(self.prg.clone(), self.chr.clone(), self.mirroring)?))
             }
-            m => Err(format!("mapper {m} is out of scope; this console has NROM (0) and GxROM (66)")),
+            m => Err(format!("mapper {m} is out of scope; this console has NROM (0), MMC3 (4) and GxROM (66)")),
         }
     }
 }

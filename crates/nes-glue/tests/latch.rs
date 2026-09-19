@@ -60,25 +60,28 @@ fn a_rising_edge_sample_agrees_only_while_the_input_holds_across_the_pulse() {
 /// tiles from pattern table 0 ($0xxx) on dots 1..256 and 321..336 with
 /// the nametable and attribute fetches at $2xxx, sprites from pattern
 /// table 1 ($1xxx) on dots 257..320. One ALE pulse per fetch.
-fn standard_line() -> Vec<(bool, u16)> {
-    let mut out = Vec::new();
-    let mut pulse = |a: u16| {
-        out.push((true, a));
-        out.push((false, a));
+fn standard_line() -> Vec<(u64, bool, u16)> {
+    let mut out: Vec<(u64, bool, u16)> = Vec::new();
+    let pulse = |out: &mut Vec<(u64, bool, u16)>, at: &mut u64, a: u16| {
+        // A fetch is two dots: ALE high on the first, low on the second.
+        out.push((*at, true, a));
+        out.push((*at + 1, false, a));
+        *at += 2;
     };
     for tile in 0..42u16 {
         let dot = 1 + tile * 8;
+        let mut at = dot as u64;
         if (257..321).contains(&dot) {
             // Sprite window: two garbage nametable fetches, then pattern 1.
-            pulse(0x2000);
-            pulse(0x2000);
-            pulse(0x1000 | (tile & 7) << 4);
-            pulse(0x1008 | (tile & 7) << 4);
+            pulse(&mut out, &mut at, 0x2000);
+            pulse(&mut out, &mut at, 0x2000);
+            pulse(&mut out, &mut at, 0x1000 | (tile & 7) << 4);
+            pulse(&mut out, &mut at, 0x1008 | (tile & 7) << 4);
         } else if dot <= 336 {
-            pulse(0x2000 | tile);
-            pulse(0x23c0 | (tile >> 2));
-            pulse((tile & 0xff) << 4);
-            pulse((tile & 0xff) << 4 | 8);
+            pulse(&mut out, &mut at, 0x2000 | tile);
+            pulse(&mut out, &mut at, 0x23c0 | (tile >> 2));
+            pulse(&mut out, &mut at, (tile & 0xff) << 4);
+            pulse(&mut out, &mut at, (tile & 0xff) << 4 | 8);
         }
     }
     out
@@ -88,14 +91,17 @@ fn standard_line() -> Vec<(bool, u16)> {
 fn an_a12_watcher_at_the_latch_falls_sees_one_rise_per_line_only_with_the_mmc3_filter() {
     let mut latch = Ls373::new();
     let mut raw = A12Watcher::with_filter(0);
-    let mut mmc3 = A12Watcher::with_filter(A12Watcher::MMC3_FILTER);
-    let lines = 240;
-    for _ in 0..lines {
-        for (ale, a) in standard_line() {
+    let mut mmc3 = A12Watcher::default();
+    let lines = 240u64;
+    for line in 0..lines {
+        for (dot, ale, a) in standard_line() {
             let (_, fell) = latch.step(ale, a as u8);
             if fell {
-                raw.latched(a);
-                mmc3.latched(a);
+                // The dot the whole address is valid on the edge, counted
+                // from power-on the way a console counts it.
+                let at = line * 341 + dot;
+                raw.saw(a, at);
+                mmc3.saw(a, at);
             }
         }
     }

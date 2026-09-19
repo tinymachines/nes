@@ -44,46 +44,10 @@ impl Ls373 {
     }
 }
 
-/// A PPU A12 watcher of the MMC3 kind, as an instrument for the latch's
-/// test and for N5: counts A12's rising edges as seen at the latch's
-/// falling edges, when a whole PPU address is valid on the cartridge
-/// edge, and only when A12 had been low for at least `filter` such
-/// falls first. With the filter at 0 it counts every rise, and the
-/// latch's test shows why a mapper cannot use that: inside the sprite
-/// window the two garbage nametable fetches between sprites take A12
-/// low for two falls, so a raw count sees eight rises a line where the
-/// MMC3 (whose filter is stated as A12 low for three or more M2 falls,
-/// about nine dots) sees one. AUTHORED; the unit is latch falls, two per
-/// fetch cycle of the PPU's measured schedule.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub struct A12Watcher {
-    last_a12: bool,
-    low_for: u32,
-    pub filter: u32,
-    pub rises: u32,
-}
-
-impl A12Watcher {
-    /// The MMC3's filter in latch falls: three, which is six dots of the
-    /// schedule, longer than the garbage-fetch gap and shorter than any
-    /// background span.
-    pub const MMC3_FILTER: u32 = 3;
-
-    pub fn with_filter(filter: u32) -> A12Watcher {
-        A12Watcher { filter, ..A12Watcher::default() }
-    }
-
-    /// Feed the address valid at one latch fall.
-    pub fn latched(&mut self, ppu_a: u16) {
-        let a12 = ppu_a & 0x1000 != 0;
-        if a12 {
-            if !self.last_a12 && self.low_for >= self.filter {
-                self.rises += 1;
-            }
-            self.low_for = 0;
-        } else {
-            self.low_for += 1;
-        }
-        self.last_a12 = a12;
-    }
-}
+/// The PPU A12 watcher lives in `nes-bus` now, beside the board that
+/// listens to it. It was authored here as an instrument while no mapper
+/// existed, counting in latch falls with a filter of three; MMC3 (nes-bus
+/// 0.1.3) counts the same line in dots with a filter of nine, and two
+/// numbers for one filter is how they drift. Re-exported so this crate's
+/// own test still reaches it.
+pub use nes_bus::cart::A12Watcher;

@@ -132,6 +132,11 @@ impl Console {
     pub fn master_half_step(&mut self) {
         let m = self.master;
         if m % 8 == self.alignment.ppu_phase as u64 {
+            {
+                // The dot the cartridge is about to see its bus on.
+                let b = self.board.borrow();
+                b.cart.borrow_mut().dot = self.dots;
+            }
             let frame = self.board.borrow_mut().ppu.step_dot();
             if let Some(f) = frame {
                 self.frames.push(f);
@@ -147,7 +152,7 @@ impl Console {
             let irq = {
                 let apu = self.cpu.apu.borrow();
                 apu.frame_irq || apu.dmc.irq
-            };
+            } || self.board.borrow().cart.borrow().cart.irq();
             self.cpu.set_inputs(self.res_n, !irq, !nmi, true, false);
             self.cpu.half_step();
             self.cpu_half_cycles += 1;

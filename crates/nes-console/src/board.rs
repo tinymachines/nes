@@ -28,6 +28,11 @@ pub struct Cart {
     /// board that declared none keeps its 8 KiB here and the PPU's
     /// writes land.
     pub chr_ram: Option<Vec<u8>>,
+    /// The console's PPU dot counter as of the dot being stepped, set by
+    /// `Console::master_half_step`. It is handed to the cartridge with
+    /// every PPU bus access, because a counting board (MMC3) measures
+    /// how long A12 has been low and nothing here else owns that clock.
+    pub dot: u64,
 }
 
 /// The PPU's view of the cartridge and CIRAM.
@@ -37,6 +42,11 @@ impl VramBus for PpuBus {
     fn read(&mut self, a: u16) -> u8 {
         let mut c = self.0.borrow_mut();
         let a = a & 0x3fff;
+        // Every access, whatever answers it: what a counting board
+        // watches is the address line, and the nametable fetches are
+        // half of the pattern it counts.
+        let dot = c.dot;
+        c.cart.ppu_bus(a, dot);
         if a < 0x2000 {
             if let Some(ram) = &c.chr_ram {
                 return ram[a as usize];
@@ -53,6 +63,8 @@ impl VramBus for PpuBus {
     fn write(&mut self, a: u16, v: u8) {
         let mut c = self.0.borrow_mut();
         let a = a & 0x3fff;
+        let dot = c.dot;
+        c.cart.ppu_bus(a, dot);
         if a < 0x2000 {
             if let Some(ram) = c.chr_ram.as_mut() {
                 ram[a as usize] = v;
@@ -101,8 +113,26 @@ pub struct Board {
 }
 
 impl Board {
+    /// The PPU drives its address bus from `v`, so a $2006 write and a
+    /// $2007 access move the bus without any fetch happening: with
+    /// rendering off that is the only way A12 moves, and it is how a
+    /// game clocks a counting cartridge by hand. blargg's
+    /// `1-clocking` #3 ("should decrement when A12 is toggled via
+    /// PPUADDR") is the ROM that says so. During rendering the next
+    /// fetch overrides this within a dot.
+    fn ppu_address_moved(&mut self) {
+        let a = self.ppu.v & 0x3fff;
+        let mut c = self.cart.borrow_mut();
+        let dot = c.dot;
+        c.cart.ppu_bus(a, dot);
+    }
+
     pub fn new(cart: Box<dyn Cartridge>, chr_ram: Option<Vec<u8>>, prg_ram: bool) -> Rc<RefCell<Board>> {
-        let cart = Rc::new(RefCell::new(Cart { cart, ciram: Tmm2115::new(), chr_ram }));
+        // A board that banks its own CHR RAM keeps it; the console's
+        // copy exists for the CHR ROM boards a test cartridge is built
+        // on, and two copies would be one fact in two places.
+        let chr_ram = if cart.owns_chr_ram() { None } else { chr_ram };
+        let cart = Rc::new(RefCell::new(Cart { cart, ciram: Tmm2115::new(), chr_ram, dot: 0 }));
         let ppu = Fast::on_bus(Box::new(PpuBus(cart.clone())));
         let trace = std::env::var_os("TRACE_PPU").is_some();
         Rc::new(RefCell::new(Board { wram: Tmm2115::new(), prg_ram: prg_ram.then(|| vec![0u8; 0x2000]), cart, ppu, pads: [Controller::default(), Controller::default()], open_bus: 0, reads: 0, writes: 0, trace, half_steps_into_dot: 0, out0: false, strobe_rose_at: None, latch_positions: Vec::new() }))
@@ -117,7 +147,9 @@ impl Board {
         let v = if !d.ram_cs_n {
             self.wram.read(a)
         } else if !d.ppu_cs_n {
-            self.ppu.read_timed((a & 7) as u8, self.half_steps_into_dot)
+            let v = self.ppu.read_timed((a & 7) as u8, self.half_steps_into_dot);
+            self.ppu_address_moved();
+            v
         } else if a == 0x4016 {
             let line = self.pads[0].read();
             read_4016(line, true, true, self.open_bus)
@@ -164,6 +196,7 @@ impl Board {
                 eprintln!("ppu write ${:04x} <- {v:02x}  (v={:04x} t={:04x} w={} ctrl={:02x} mask={:02x} pos={:?})", a, self.ppu.v, self.ppu.t, self.ppu.w as u8, self.ppu.ctrl, self.ppu.mask, self.ppu.position());
             }
             self.ppu.write((a & 7) as u8, v);
+            self.ppu_address_moved();
         } else if a == 0x4016 {
             // OUT0 is the controller strobe.
             let out0 = v & 1 != 0;
