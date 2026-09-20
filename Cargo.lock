@@ -1179,14 +1179,14 @@ source = "git+https://github.com/tinymachines/nes-bus?tag=v0.1.2#220ebf8913205c4
 
 [[package]]
 name = "nes-bus"
-version = "0.1.4"
-source = "git+https://github.com/tinymachines/nes-bus?tag=v0.1.4#4dcc9855e8c12c577eeeb553e7cf81ea93f6ec52"
+version = "0.1.5"
+source = "git+https://github.com/tinymachines/nes-bus?tag=v0.1.5#8155de6170b1afcfb7f597be4ad8afcffff066ce"
 
 [[package]]
 name = "nes-console"
 version = "0.1.0"
 dependencies = [
- "nes-bus 0.1.4",
+ "nes-bus 0.1.5",
  "nes-glue",
  "ntsc-crt",
  "ntsc-decode",
@@ -1205,7 +1205,7 @@ dependencies = [
 name = "nes-glue"
 version = "0.1.0"
 dependencies = [
- "nes-bus 0.1.4",
+ "nes-bus 0.1.5",
 ]
 
 [[package]]
@@ -1214,7 +1214,7 @@ version = "0.1.0"
 dependencies = [
  "cpal",
  "gilrs",
- "nes-bus 0.1.4",
+ "nes-bus 0.1.5",
  "nes-console",
  "nes-glue",
  "ntsc-crt",
@@ -1231,7 +1231,7 @@ dependencies = [
 name = "nes-wasm"
 version = "0.1.0"
 dependencies = [
- "nes-bus 0.1.4",
+ "nes-bus 0.1.5",
  "nes-console",
  "nes-glue",
  "wasm-bindgen",
@@ -1262,7 +1262,7 @@ dependencies = [
 [[package]]
 name = "ntsc-crt"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.14#debe9ff0cabfea7364e8b4139bffed9ddc6d821c"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.15#f167d2f790deb9ee78e1aaabd0ae0109f4cd94d2"
 dependencies = [
  "ntsc-decode",
  "ntsc-grid",
@@ -1271,7 +1271,7 @@ dependencies = [
 [[package]]
 name = "ntsc-decode"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.14#debe9ff0cabfea7364e8b4139bffed9ddc6d821c"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.15#f167d2f790deb9ee78e1aaabd0ae0109f4cd94d2"
 dependencies = [
  "ntsc-grid",
  "toml",
@@ -1280,16 +1280,16 @@ dependencies = [
 [[package]]
 name = "ntsc-grid"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.14#debe9ff0cabfea7364e8b4139bffed9ddc6d821c"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.15#f167d2f790deb9ee78e1aaabd0ae0109f4cd94d2"
 dependencies = [
- "nes-bus 0.1.4",
+ "nes-bus 0.1.5",
  "num-rational",
 ]
 
 [[package]]
 name = "ntsc-source-cap"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.14#debe9ff0cabfea7364e8b4139bffed9ddc6d821c"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.15#f167d2f790deb9ee78e1aaabd0ae0109f4cd94d2"
 dependencies = [
  "ntsc-grid",
  "ntsc-source-nes",
@@ -1299,9 +1299,9 @@ dependencies = [
 [[package]]
 name = "ntsc-source-nes"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.14#debe9ff0cabfea7364e8b4139bffed9ddc6d821c"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.15#f167d2f790deb9ee78e1aaabd0ae0109f4cd94d2"
 dependencies = [
- "nes-bus 0.1.4",
+ "nes-bus 0.1.5",
  "ntsc-grid",
  "toml",
 ]
@@ -1309,7 +1309,7 @@ dependencies = [
 [[package]]
 name = "ntsc-source-rgb"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.14#debe9ff0cabfea7364e8b4139bffed9ddc6d821c"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.15#f167d2f790deb9ee78e1aaabd0ae0109f4cd94d2"
 dependencies = [
  "ntsc-grid",
  "toml",
@@ -1318,7 +1318,7 @@ dependencies = [
 [[package]]
 name = "ntsc-wasm"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.14#debe9ff0cabfea7364e8b4139bffed9ddc6d821c"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.15#f167d2f790deb9ee78e1aaabd0ae0109f4cd94d2"
 dependencies = [
  "ntsc-decode",
  "ntsc-grid",
@@ -2411,7 +2411,7 @@ name = "v2c02-dots"
 version = "0.1.0"
 dependencies = [
  "halfphi 0.1.6 (git+https://github.com/tinymachines/halfphi?tag=v0.1.6)",
- "nes-bus 0.1.4",
+ "nes-bus 0.1.5",
  "ntsc-grid",
  "ntsc-source-nes",
  "v2c02-netlist",
@@ -2422,7 +2422,7 @@ dependencies = [
 name = "v2c02-fast"
 version = "0.1.0"
 dependencies = [
- "nes-bus 0.1.4",
+ "nes-bus 0.1.5",
  "v2c02-dots",
  "v2c02-netlist",
  "v2c02-sim",
@@ -2440,7 +2440,7 @@ name = "v2c02-sim"
 version = "0.1.0"
 dependencies = [
  "halfphi 0.1.6 (git+https://github.com/tinymachines/halfphi?tag=v0.1.6)",
- "nes-bus 0.1.4",
+ "nes-bus 0.1.5",
  "v2c02-netlist",
 ]
 

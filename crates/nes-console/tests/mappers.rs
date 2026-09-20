@@ -1,5 +1,5 @@
-//! The three boards the console gained after MMC3, plugged in and run:
-//! MMC1 (mapper 1), UxROM (2) and CNROM (3).
+//! The four boards the console gained after MMC3, plugged in and run:
+//! MMC1 (mapper 1), UxROM (2), CNROM (3) and MMC2 (9).
 //!
 //! What nes-bus's own tests hold is the boards' logic from the outside,
 //! a register at a time. What this holds is the two things only a
@@ -19,7 +19,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use nes_bus::cart::{Cartridge, Cnrom, Mirroring, Mmc1, Uxrom};
+use nes_bus::cart::{Cartridge, Cnrom, Mirroring, Mmc1, Mmc2, Uxrom};
 use nes_console::{ines, Alignment, Console};
 
 /// A board the test keeps a handle on while the console holds it. It
@@ -173,7 +173,7 @@ fn the_header_names_the_board_and_an_unknown_one_is_refused() {
         b.resize(16 + prg_banks as usize * 0x4000 + chr_banks as usize * 0x2000, 0);
         b
     };
-    for (mapper, prg_banks, chr_banks) in [(0u8, 2u8, 1u8), (1, 8, 0), (2, 8, 0), (3, 2, 4), (4, 16, 16), (66, 4, 2)] {
+    for (mapper, prg_banks, chr_banks) in [(0u8, 2u8, 1u8), (1, 8, 0), (2, 8, 0), (3, 2, 4), (4, 16, 16), (9, 8, 16), (66, 4, 2)] {
         let rom = ines::parse(&image(mapper, prg_banks, chr_banks)).expect("iNES");
         assert_eq!(rom.mapper, mapper);
         assert!(rom.cart().is_ok(), "mapper {mapper} is a board this console has");
@@ -189,4 +189,85 @@ fn the_header_names_the_board_and_an_unknown_one_is_refused() {
     assert!(e.contains("UxROM carries CHR RAM"), "{e}");
     let e = why(3, 2, 0);
     assert!(e.contains("CHR RAM"), "{e}");
+    let e = why(9, 8, 0);
+    assert!(e.contains("MMC2's latches"), "{e}");
+}
+
+/// MMC2's latch is flipped by the PPU and nothing else, so the console
+/// is the only place the claim can be made end to end: rendering on, a
+/// program that touches no register after setting the four banks, and
+/// the latch moving anyway because the PPU fetched the tile that moves
+/// it.
+///
+/// The cartridge here draws one screen of tile $FD, which the part's
+/// low-half trigger sits inside ($0FD8 is a byte of tile $FD's
+/// bitmap). A frame of that and latch 0 has been flipped to $FD by the
+/// picture itself.
+#[test]
+fn mmc2s_latch_is_flipped_by_the_ppu_and_not_by_the_program() {
+    // Fill the nametable with tile $FE, turn rendering on, and write
+    // nothing else. The offsets are computed from where the branches
+    // land, not typed: a hand-assembled backward branch is exactly the
+    // thing this repository has already got wrong once today.
+    // $E100: MMC2 fixes the LAST 8 KiB bank at $E000, where the other
+    // boards here fix the last 16 KiB at $C000.
+    const ORG: u16 = 0xe100;
+    let mut code: Vec<u8> = Vec::new();
+    // LDA $2002 (reset the address latch); $2006 <- $2000.
+    code.extend([0xad, 0x02, 0x20, 0xa9, 0x20, 0x8d, 0x06, 0x20, 0xa9, 0x00, 0x8d, 0x06, 0x20]);
+    // LDX #$04 (pages); LDY #$00; LDA #$FE (the tile).
+    code.extend([0xa2, 0x04, 0xa0, 0x00, 0xa9, 0xfe]);
+    let loop_at = ORG + code.len() as u16;
+    code.extend([0x8d, 0x07, 0x20]); // STA $2007
+    code.push(0x88); // DEY
+    let back = |code: &Vec<u8>| {
+        let after = ORG as i32 + code.len() as i32 + 2;
+        (loop_at as i32 - after) as i8 as u8
+    };
+    let off = back(&code);
+    code.extend([0xd0, off]); // BNE loop
+    code.push(0xca); // DEX
+    let off = back(&code);
+    code.extend([0xd0, off]); // BNE loop
+    // $2000 <- $00 (patterns at $0000); $2001 <- $08 (background on).
+    code.extend([0xa9, 0x00, 0x8d, 0x00, 0x20, 0xa9, 0x08, 0x8d, 0x01, 0x20]);
+    let here = ORG + code.len() as u16;
+    code.extend([0x4c, here as u8, (here >> 8) as u8]);
+
+    // PRG: 64 KiB in 8 KiB banks, the code in the last one ($E000).
+    let mut prg = vec![0u8; 8 * 0x2000];
+    let last = prg.len() - 0x2000;
+    prg[last + 0x0100..last + 0x0100 + code.len()].copy_from_slice(&code);
+    let n = prg.len();
+    prg[n - 4..n - 2].copy_from_slice(&[0x00, 0xe1]); // reset vector $E100
+    // CHR: four 4 KiB banks, each filled with its own index so a tile
+    // drawn from one is distinguishable, and every byte nonzero so the
+    // picture is not the backdrop.
+    let mut chr = vec![0u8; 4 * 0x1000];
+    for (i, b) in chr.chunks_mut(0x1000).enumerate() {
+        b.fill(0x11 * (i as u8 + 1));
+    }
+    let board = Rc::new(RefCell::new(Mmc2::new(prg, chr, Mirroring::Vertical).expect("MMC2")));
+    {
+        // The four CHR registers, set from outside so the program does
+        // not have to: this test is about the latch, not the writes.
+        let mut b = board.borrow_mut();
+        b.cpu_write(0xb000, 0); // $0000 on $FD
+        b.cpu_write(0xc000, 1); // $0000 on $FE
+        b.cpu_write(0xd000, 2); // $1000 on $FD
+        b.cpu_write(0xe000, 3); // $1000 on $FE
+    }
+    assert_eq!(board.borrow().latches(), [0xfd, 0xfd], "power-on");
+    let mut c = Console::new(Box::new(Shared(board.clone())), None, Alignment::default());
+    c.run_frames(4);
+    {
+        // The program did what it said before the latch is believed: a
+        // nametable it never filled would draw tile $00 and move
+        // nothing.
+        let b = c.board.borrow();
+        assert_eq!(b.ppu.mask & 0x08, 0x08, "the program turned the background on");
+        assert_eq!(b.cart.borrow().ciram.read(0), 0xfe, "and filled the nametable with the tile");
+    }
+    assert_eq!(board.borrow().latches()[0], 0xfe, "the PPU drew tile $FE and the latch followed it");
+    assert_eq!(board.borrow().banks(), (0, [0, 2], [1, 3]), "and no register moved");
 }

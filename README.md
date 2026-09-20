@@ -17,23 +17,33 @@ anything.
 ## Status
 
 The boards the console has are NROM (mapper 0), MMC1 (1), UxROM (2),
-CNROM (3), MMC3 (4) and GxROM (66). Between them they take nineteen of
-the twenty cartridges dumped from this desk with the OSCR reader: two
-NROM, nine MMC1, three UxROM, two CNROM, two MMC3 and one GxROM. The
-twentieth is Mike Tyson's Punch-Out, which is MMC2 (mapper 9) and is
-refused by name.
+CNROM (3), MMC3 (4), MMC2 (9) and GxROM (66). Between them they take
+every one of the twenty cartridges dumped from this desk with the OSCR
+reader: two NROM, nine MMC1, three UxROM, two CNROM, two MMC3, one MMC2
+and one GxROM.
 
-MMC1, UxROM and CNROM arrived 2026-09-21 (nes-bus v0.1.4).
-`tests/mappers.rs` runs a program on the die through each of them and
-holds what it reads back; the boards' own logic is held a register at a
-time in nes-bus's contract suite. The one that needed a console to
-test is MMC1's serial port: a write to its window carries ONE bit, and
+MMC1, UxROM and CNROM arrived 2026-09-21 (nes-bus v0.1.4), MMC2 with
+them (v0.1.5). `tests/mappers.rs` runs a program on the die through
+each of them and holds what it reads back; the boards' own logic is held
+a register at a time in nes-bus's contract suite. The one that needed a
+console to test is MMC1's serial port: a write to its window carries
+ONE bit, and
 two writes on CONSECUTIVE CPU cycles are one write, which is what an
 RMW instruction on the window is. The dot that decides it is the
 console's, so the cartridge trait gained `cpu_write_at` and `Board`
 hands the dot over with every write.
 
-**Eighteen of the nineteen play.** The one that does not is Super Mario
+MMC2 is the other one a console has to test, for the opposite reason:
+its CHR bank is not chosen by the CPU at all. Each half of the pattern
+table has two bank registers and a latch saying which answers, and the
+PPU's own fetches flip it, so the tile that draws the top of Little
+Mac's head is also the switch. The console test sets the four registers
+from outside, runs a program that fills a nametable with one tile and
+turns rendering on and then writes nothing more, and holds that the
+latch moved and no register did. It checks its own program first: a
+nametable it never filled would draw tile $00 and move nothing.
+
+**Nineteen of the twenty play.** The one that does not is Super Mario
 Bros., whose only dump is one the reader's own CRC32 could not match:
 that cartridge wants reading again before its blank screen means
 anything. Nothing here has been played past its title screen with a

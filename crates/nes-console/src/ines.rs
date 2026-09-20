@@ -1,12 +1,12 @@
 //! The iNES container, enough of it for the boards the console has: a
 //! 16-byte header, PRG in 16 KiB units, CHR in 8 KiB units, the
 //! mirroring bit, the mapper number. Mappers 0 (NROM), 1 (MMC1),
-//! 2 (UxROM), 3 (CNROM), 4 (MMC3) and 66 (GxROM, the bench's own
-//! cartridge) are known; anything else (a trainer, four-screen, PAL,
+//! 2 (UxROM), 3 (CNROM), 4 (MMC3), 9 (MMC2) and 66 (GxROM, the bench's
+//! own cartridge) are known; anything else (a trainer, four-screen, PAL,
 //! every other mapper) is refused by name: a silent fallback here would
 //! be a plausible wrong console.
 
-use nes_bus::cart::{Cartridge, Cnrom, Gxrom, Mirroring, Mmc1, Mmc3, Nrom, Uxrom};
+use nes_bus::cart::{Cartridge, Cnrom, Gxrom, Mirroring, Mmc1, Mmc2, Mmc3, Nrom, Uxrom};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ines {
@@ -64,7 +64,7 @@ impl Ines {
 
     /// The cartridge the header names, boxed for the console: mapper 0
     /// as `Nrom`, 1 as `Mmc1`, 2 as `Uxrom`, 3 as `Cnrom`, 4 as `Mmc3`,
-    /// 66 as `Gxrom`, anything else refused by name.
+    /// 9 as `Mmc2`, 66 as `Gxrom`, anything else refused by name.
     pub fn cart(&self) -> Result<Box<dyn Cartridge>, String> {
         match self.mapper {
             0 => Ok(Box::new(self.nrom()?)),
@@ -93,13 +93,19 @@ impl Ines {
                 let chr = if self.chr_ram { Vec::new() } else { self.chr.clone() };
                 Ok(Box::new(Mmc3::new(self.prg.clone(), chr, self.mirroring)?))
             }
+            9 => {
+                if self.chr_ram {
+                    return Err("mapper 9 with CHR RAM is not a board this console has: MMC2's latches switch between banks of CHR ROM".into());
+                }
+                Ok(Box::new(Mmc2::new(self.prg.clone(), self.chr.clone(), self.mirroring)?))
+            }
             66 => {
                 if self.chr_ram {
                     return Err("mapper 66 with CHR RAM is not a board this console has".into());
                 }
                 Ok(Box::new(Gxrom::new(self.prg.clone(), self.chr.clone(), self.mirroring)?))
             }
-            m => Err(format!("mapper {m} is out of scope; this console has NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 (4) and GxROM (66)")),
+            m => Err(format!("mapper {m} is out of scope; this console has NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 (4), MMC2 (9) and GxROM (66)")),
         }
     }
 }
