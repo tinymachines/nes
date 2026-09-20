@@ -199,7 +199,7 @@ its datasheet, labelled authored, with its own small test.
   recorded in the run stamp. Wall-clock pacing is a separate layer,
   labelled authored, paced by the per-frame-type periods of section 0
   item 5 with the ntsc-wasm drift policy.
-- Gate 1: the CPU/PPU alignment. The NMI-during-BRK halfscore and the
+- Gate 1: the CPU/PPU alignment. The NMI-during-BRK case and the
   VBL race from P2 replay through the console with the same
   half-cycle positions as the standalone traces.
 - Gate 2: blargg's `cpu_timing_test`, `ppu_vbl_nmi`, `sprite_hit_tests`,

@@ -78,13 +78,16 @@ nanosecond short); at half the period every other tick duplicates; at
 twice it drops one per tick. One frame banks 798.7 samples; the ring
 holds 12,000 and a drain past that counts the underrun.
 
-The window, under Xvfb on this box, 600 redraws of full_palette.nes
-with the load average at eight: the console thread's frame 11.4 ms
-mean and 82 ms worst, 134 of 1,467 over 16 ms, 2 over 33; 74 drops in
-1,394 periods, 4,800 audio underrun samples (the device does not
-exist here; the ring's counter is the drain the shell's own smoke run
-makes). Recorded, not held: the box was not idle and the display was
-not real.
+The window, under Xvfb on this box, 600 display redraws of
+full_palette.nes with the load average at eight: the console thread's
+frame 11.4 ms mean and 82 ms worst, 134 of 1,467 over 16 ms, 2 over 33;
+74 drops in 1,394 console periods, 4,800 audio underrun samples (the
+device does not exist here; the ring's counter is the drain the shell's
+own smoke run makes). Each thread counts for itself and
+`NES_SHELL_TICKS` ends the run on the display's 600th redraw, so the
+periods and frames above are the console thread's own count over the
+same session. Recorded, not held: the box was not idle and the display
+was not real.
 
 ## Step 3: the second target
 
