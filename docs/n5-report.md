@@ -1,12 +1,17 @@
 # N5 report: the console, gates 1 and 2 recorded, gate 3 open
 
-Run stamp: 2026-09-06, rustc 1.97.1. Pins: 6502 `9b3ad9a` (v6502-micro,
+Run stamp: 2026-09-06, rustc 1.97.1. Pins: 6502 `3805107` (v6502-micro,
 v6502-pins, v6502-sim as the gate's oracle; `89ae24f` at the 2026-09-06
 run, moved on 2026-09-12 and 2026-09-13 for rung 3's seam and
-taken-branch rules and the recorded bus, the suite green at each move),
-2a03 `dbf116b` at the 2026-09-06 run (v2a03-micro by path; the path's
-head has since gained the DMA memo fix, 54295cc), 2c02 `474b7e7`
-(v2c02-fast by path), nes-bus v0.1.1, nes-glue from N4. Alignment stamp: `Alignment::MEASURED`, cpu_phase 4, ppu_phase
+taken-branch rules and the recorded bus, on 2026-09-21 for a branch
+taken backward across a page, and on 2026-09-22 for a taken branch
+forward on its page, the suite green at each move), 2a03 `dbf116b` at
+the 2026-09-06 run (v2a03-micro by path; the path's head is now
+`f1bced7`, having gained the DMA memo fix and followed the 6502's pin),
+2c02 `474b7e7` at that run (v2c02-fast by path; the head is now
+`172264a`, having gained the sprite slots the stepper skipped and
+followed nes-bus), nes-bus v0.1.1 at that run and v0.1.6 now, nes-glue
+from N4. Alignment stamp: `Alignment::MEASURED`, cpu_phase 4, ppu_phase
 3. Throughput: 125 to 140 frames a second on one core, 2.1x to 2.3x
 real time, the CPU on rung 3 and the PPU on the fast rung. `cargo test
 -p nes-console`: 6 tests (the plumbing, the NMI replay, the race replay
