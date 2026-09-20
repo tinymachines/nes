@@ -22,7 +22,7 @@ every one of the twenty cartridges dumped from this desk with the OSCR
 reader: two NROM, nine MMC1, three UxROM, two CNROM, two MMC3, one MMC2
 and one GxROM.
 
-MMC1, UxROM and CNROM arrived 2026-09-21 (nes-bus v0.1.4), MMC2 with
+MMC1, UxROM and CNROM arrived 2026-09-20 (nes-bus v0.1.4), MMC2 with
 them (v0.1.5). `tests/mappers.rs` runs a program on the die through
 each of them and holds what it reads back; the boards' own logic is held
 a register at a time in nes-bus's contract suite. The one that needed a
@@ -63,7 +63,7 @@ chip revision (his Crystalis; this board is the one his Super Mario
 Bros. 3 is on, and `5-MMC3` holds it), and `tests/mmc3.rs` records what
 it says rather than tolerating it.
 
-`4-scanline_timing` joined them on 2026-09-22 and took two things,
+`4-scanline_timing` joined them on 2026-09-20 and took two things,
 because it brackets the interrupt's arrival to ONE PPU clock and the
 console was wrong by more than that in two independent ways. The A12
 filter was one dot too permissive: nine dots of A12 low is exactly three

@@ -24,7 +24,7 @@ use crate::board::{Board, CpuBus};
 /// the interrupt came first and $22 that it did not). A bracket that
 /// tight cannot be met by handing the core the board's own level at
 /// whatever CPU half-cycle comes next, which is what this console did
-/// until 2026-09-22: a CPU half-cycle is a dot and a half, so stepping
+/// until 2026-09-20: a CPU half-cycle is a dot and a half, so stepping
 /// by one steps over the answer.
 ///
 /// `examples/irq-sweep` is the measurement: every delay from 0 up, the

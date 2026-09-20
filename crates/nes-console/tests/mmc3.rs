@@ -11,7 +11,7 @@
 //! games this console is for are on, and `5-MMC3` is the ROM that
 //! holds it.
 //!
-//! `4-scanline_timing` joined the passing list on 2026-09-22, and it
+//! `4-scanline_timing` joined the passing list on 2026-09-20, and it
 //! took two things, because it brackets the interrupt's arrival to ONE
 //! PPU clock and the console was wrong by more than that in two
 //! independent ways:

@@ -3,10 +3,10 @@
 Run stamp: 2026-09-06, rustc 1.97.1. Pins: 6502 `3805107` (v6502-micro,
 v6502-pins, v6502-sim as the gate's oracle; `89ae24f` at the 2026-09-06
 run, moved on 2026-09-12 and 2026-09-13 for rung 3's seam and
-taken-branch rules and the recorded bus, on 2026-09-21 for a branch
-taken backward across a page, and on 2026-09-22 for a taken branch
-forward on its page, the suite green at each move), 2a03 `dbf116b` at
-the 2026-09-06 run (v2a03-micro by path; the path's head is now
+taken-branch rules and the recorded bus, and twice on 2026-09-20, for a
+branch taken backward across a page and then for a taken branch forward
+on its page, the suite green at each move), 2a03 `dbf116b` at the
+2026-09-06 run (v2a03-micro by path; the path's head is now
 `f1bced7`, having gained the DMA memo fix and followed the 6502's pin),
 2c02 `474b7e7` at that run (v2c02-fast by path; the head is now
 `172264a`, having gained the sprite slots the stepper skipped and
