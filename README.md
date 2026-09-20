@@ -17,9 +17,11 @@ anything.
 ## Status
 
 The boards the console has are NROM (mapper 0), MMC1 (1), UxROM (2),
-CNROM (3), MMC3 (4) and GxROM (66). Between them they take every
-cartridge on this desk: of the twenty dumped with the OSCR reader, two
-are NROM, nine MMC1, three UxROM, two CNROM, two MMC3 and one GxROM.
+CNROM (3), MMC3 (4) and GxROM (66). Between them they take nineteen of
+the twenty cartridges dumped from this desk with the OSCR reader: two
+NROM, nine MMC1, three UxROM, two CNROM, two MMC3 and one GxROM. The
+twentieth is Mike Tyson's Punch-Out, which is MMC2 (mapper 9) and is
+refused by name.
 
 MMC1, UxROM and CNROM arrived 2026-09-21 (nes-bus v0.1.4).
 `tests/mappers.rs` runs a program on the die through each of them and
@@ -30,8 +32,11 @@ two writes on CONSECUTIVE CPU cycles are one write, which is what an
 RMW instruction on the window is. The dot that decides it is the
 console's, so the cartridge trait gained `cpu_write_at` and `Board`
 hands the dot over with every write. Nine of the fourteen games on
-those three boards run; the five that do not are blocked on the
-vertical blank, not on a board (below).
+those three boards draw a picture; the five that do not are blocked on
+the vertical blank, not on a board (below). Thirteen of the twenty draw
+in all: the sixth blank is Super Mario Bros., whose only dump is one the
+reader's own CRC32 could not match, so it has two possible causes and
+means nothing until that cartridge is read again.
 
 MMC3 arrived 2026-09-20 for the games that bank, Super Mario
 Bros. 2 and 3 among them: PRG and CHR in banks either way up, mirroring
