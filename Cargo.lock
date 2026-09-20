@@ -769,7 +769,7 @@ source = "git+https://github.com/tinymachines/halfphi?tag=v0.1.6#1d460834d36728c
 [[package]]
 name = "halfphi"
 version = "0.1.6"
-source = "git+https://github.com/tinymachines/6502?rev=9b3ad9a#9b3ad9ab40bb02aa13a4543da20da5729ead0d37"
+source = "git+https://github.com/tinymachines/6502?rev=51339d7#51339d707bf0c0ceac2f32c99b0f126b9550a06d"
 
 [[package]]
 name = "hashbrown"
@@ -1179,14 +1179,14 @@ source = "git+https://github.com/tinymachines/nes-bus?tag=v0.1.2#220ebf8913205c4
 
 [[package]]
 name = "nes-bus"
-version = "0.1.3"
-source = "git+https://github.com/tinymachines/nes-bus?tag=v0.1.3#02f1d5d5e4b3a617dfd3e1d138149510b36f183b"
+version = "0.1.4"
+source = "git+https://github.com/tinymachines/nes-bus?tag=v0.1.4#4dcc9855e8c12c577eeeb553e7cf81ea93f6ec52"
 
 [[package]]
 name = "nes-console"
 version = "0.1.0"
 dependencies = [
- "nes-bus 0.1.3",
+ "nes-bus 0.1.4",
  "nes-glue",
  "ntsc-crt",
  "ntsc-decode",
@@ -1205,7 +1205,7 @@ dependencies = [
 name = "nes-glue"
 version = "0.1.0"
 dependencies = [
- "nes-bus 0.1.3",
+ "nes-bus 0.1.4",
 ]
 
 [[package]]
@@ -1214,7 +1214,7 @@ version = "0.1.0"
 dependencies = [
  "cpal",
  "gilrs",
- "nes-bus 0.1.3",
+ "nes-bus 0.1.4",
  "nes-console",
  "nes-glue",
  "ntsc-crt",
@@ -1231,7 +1231,7 @@ dependencies = [
 name = "nes-wasm"
 version = "0.1.0"
 dependencies = [
- "nes-bus 0.1.3",
+ "nes-bus 0.1.4",
  "nes-console",
  "nes-glue",
  "wasm-bindgen",
@@ -1262,7 +1262,7 @@ dependencies = [
 [[package]]
 name = "ntsc-crt"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.13#1b3c05a911d5c9106df8c885fa8285bc660ace2b"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.14#debe9ff0cabfea7364e8b4139bffed9ddc6d821c"
 dependencies = [
  "ntsc-decode",
  "ntsc-grid",
@@ -1271,7 +1271,7 @@ dependencies = [
 [[package]]
 name = "ntsc-decode"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.13#1b3c05a911d5c9106df8c885fa8285bc660ace2b"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.14#debe9ff0cabfea7364e8b4139bffed9ddc6d821c"
 dependencies = [
  "ntsc-grid",
  "toml",
@@ -1280,16 +1280,16 @@ dependencies = [
 [[package]]
 name = "ntsc-grid"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.13#1b3c05a911d5c9106df8c885fa8285bc660ace2b"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.14#debe9ff0cabfea7364e8b4139bffed9ddc6d821c"
 dependencies = [
- "nes-bus 0.1.3",
+ "nes-bus 0.1.4",
  "num-rational",
 ]
 
 [[package]]
 name = "ntsc-source-cap"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.13#1b3c05a911d5c9106df8c885fa8285bc660ace2b"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.14#debe9ff0cabfea7364e8b4139bffed9ddc6d821c"
 dependencies = [
  "ntsc-grid",
  "ntsc-source-nes",
@@ -1299,9 +1299,9 @@ dependencies = [
 [[package]]
 name = "ntsc-source-nes"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.13#1b3c05a911d5c9106df8c885fa8285bc660ace2b"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.14#debe9ff0cabfea7364e8b4139bffed9ddc6d821c"
 dependencies = [
- "nes-bus 0.1.3",
+ "nes-bus 0.1.4",
  "ntsc-grid",
  "toml",
 ]
@@ -1309,7 +1309,7 @@ dependencies = [
 [[package]]
 name = "ntsc-source-rgb"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.13#1b3c05a911d5c9106df8c885fa8285bc660ace2b"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.14#debe9ff0cabfea7364e8b4139bffed9ddc6d821c"
 dependencies = [
  "ntsc-grid",
  "toml",
@@ -1318,7 +1318,7 @@ dependencies = [
 [[package]]
 name = "ntsc-wasm"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.13#1b3c05a911d5c9106df8c885fa8285bc660ace2b"
+source = "git+https://github.com/tinymachines/ntsc-crt?tag=v0.2.14#debe9ff0cabfea7364e8b4139bffed9ddc6d821c"
 dependencies = [
  "ntsc-decode",
  "ntsc-grid",
@@ -2411,7 +2411,7 @@ name = "v2c02-dots"
 version = "0.1.0"
 dependencies = [
  "halfphi 0.1.6 (git+https://github.com/tinymachines/halfphi?tag=v0.1.6)",
- "nes-bus 0.1.3",
+ "nes-bus 0.1.4",
  "ntsc-grid",
  "ntsc-source-nes",
  "v2c02-netlist",
@@ -2422,7 +2422,7 @@ dependencies = [
 name = "v2c02-fast"
 version = "0.1.0"
 dependencies = [
- "nes-bus 0.1.3",
+ "nes-bus 0.1.4",
  "v2c02-dots",
  "v2c02-netlist",
  "v2c02-sim",
@@ -2440,14 +2440,14 @@ name = "v2c02-sim"
 version = "0.1.0"
 dependencies = [
  "halfphi 0.1.6 (git+https://github.com/tinymachines/halfphi?tag=v0.1.6)",
- "nes-bus 0.1.3",
+ "nes-bus 0.1.4",
  "v2c02-netlist",
 ]
 
 [[package]]
 name = "v6502-micro"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/6502?rev=9b3ad9a#9b3ad9ab40bb02aa13a4543da20da5729ead0d37"
+source = "git+https://github.com/tinymachines/6502?rev=51339d7#51339d707bf0c0ceac2f32c99b0f126b9550a06d"
 dependencies = [
  "v6502-netlist",
  "v6502-pins",
@@ -2457,23 +2457,23 @@ dependencies = [
 [[package]]
 name = "v6502-netlist"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/6502?rev=9b3ad9a#9b3ad9ab40bb02aa13a4543da20da5729ead0d37"
+source = "git+https://github.com/tinymachines/6502?rev=51339d7#51339d707bf0c0ceac2f32c99b0f126b9550a06d"
 dependencies = [
  "earcutr",
- "halfphi 0.1.6 (git+https://github.com/tinymachines/6502?rev=9b3ad9a)",
+ "halfphi 0.1.6 (git+https://github.com/tinymachines/6502?rev=51339d7)",
 ]
 
 [[package]]
 name = "v6502-pins"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/6502?rev=9b3ad9a#9b3ad9ab40bb02aa13a4543da20da5729ead0d37"
+source = "git+https://github.com/tinymachines/6502?rev=51339d7#51339d707bf0c0ceac2f32c99b0f126b9550a06d"
 
 [[package]]
 name = "v6502-sim"
 version = "0.1.0"
-source = "git+https://github.com/tinymachines/6502?rev=9b3ad9a#9b3ad9ab40bb02aa13a4543da20da5729ead0d37"
+source = "git+https://github.com/tinymachines/6502?rev=51339d7#51339d707bf0c0ceac2f32c99b0f126b9550a06d"
 dependencies = [
- "halfphi 0.1.6 (git+https://github.com/tinymachines/6502?rev=9b3ad9a)",
+ "halfphi 0.1.6 (git+https://github.com/tinymachines/6502?rev=51339d7)",
  "v6502-netlist",
  "v6502-pins",
 ]

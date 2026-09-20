@@ -216,7 +216,12 @@ impl Board {
         } else if let (true, Some(ram)) = ((0x6000..0x8000).contains(&a), self.prg_ram.as_mut()) {
             ram[(a - 0x6000) as usize] = v;
         } else {
-            self.cart.borrow_mut().cart.cpu_write(a, v);
+            // With the dot: MMC1's serial port has to tell an RMW's two
+            // writes from two separate ones, and the dot is the only
+            // clock the edge carries.
+            let mut c = self.cart.borrow_mut();
+            let dot = c.dot;
+            c.cart.cpu_write_at(a, v, dot);
         }
     }
 }

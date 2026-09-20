@@ -16,26 +16,26 @@ repository = "https://github.com/tinymachines/nes"
 # same revision the 2a03 pins (one MicroBus type, not two). A cold build
 # runs three rung 0s for their tables: a few minutes.
 [dependencies]
-nes-bus = { git = "https://github.com/tinymachines/nes-bus", tag = "v0.1.3" }
+nes-bus = { git = "https://github.com/tinymachines/nes-bus", tag = "v0.1.4" }
 nes-glue = { path = "../nes-glue" }
 v2a03-micro = { path = "../../../2a03/crates/v2a03-micro" }
 v2a03-dac = { path = "../../../2a03/crates/v2a03-dac" }
 v2c02-fast = { path = "../../../2c02/crates/v2c02-fast" }
-v6502-micro = { git = "https://github.com/tinymachines/6502", package = "v6502-micro", rev = "9b3ad9a" }
-v6502-pins = { git = "https://github.com/tinymachines/6502", package = "v6502-pins", rev = "9b3ad9a" }
+v6502-micro = { git = "https://github.com/tinymachines/6502", package = "v6502-micro", rev = "51339d7" }
+v6502-pins = { git = "https://github.com/tinymachines/6502", package = "v6502-pins", rev = "51339d7" }
 
 # The picture (N6): the frames through ntsc-crt's NES source, the
 # three-line comb and the CRT stages, pinned by tag. Its nes-bus is the
 # tag above, so the console's DotFrame is the encoder's.
-ntsc-grid = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.13" }
-ntsc-source-nes = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.13" }
-ntsc-decode = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.13" }
-ntsc-crt = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.13" }
+ntsc-grid = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.14" }
+ntsc-source-nes = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.14" }
+ntsc-decode = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.14" }
+ntsc-crt = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.14" }
 
 # Gate 1's oracle: the switch-level 6502 (rung 0) driven with the NMI
 # timing the console's PPU produced, at the same revision as the rungs
 # above, so there is one v6502-pins frame type in the tree.
 [dev-dependencies]
 # The capture path (N6 step 2): the card model and the recovery M4 proved.
-ntsc-source-cap = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.13" }
-v6502-sim = { git = "https://github.com/tinymachines/6502", package = "v6502-sim", rev = "9b3ad9a" }
+ntsc-source-cap = { git = "https://github.com/tinymachines/ntsc-crt", tag = "v0.2.14" }
+v6502-sim = { git = "https://github.com/tinymachines/6502", package = "v6502-sim", rev = "51339d7" }

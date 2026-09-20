@@ -16,8 +16,24 @@ anything.
 
 ## Status
 
-The boards the console has are NROM (mapper 0), MMC3 (4) and GxROM
-(66). MMC3 arrived 2026-09-20 for the games that bank, Super Mario
+The boards the console has are NROM (mapper 0), MMC1 (1), UxROM (2),
+CNROM (3), MMC3 (4) and GxROM (66). Between them they take every
+cartridge on this desk: of the twenty dumped with the OSCR reader, two
+are NROM, nine MMC1, three UxROM, two CNROM, two MMC3 and one GxROM.
+
+MMC1, UxROM and CNROM arrived 2026-09-21 (nes-bus v0.1.4).
+`tests/mappers.rs` runs a program on the die through each of them and
+holds what it reads back; the boards' own logic is held a register at a
+time in nes-bus's contract suite. The one that needed a console to
+test is MMC1's serial port: a write to its window carries ONE bit, and
+two writes on CONSECUTIVE CPU cycles are one write, which is what an
+RMW instruction on the window is. The dot that decides it is the
+console's, so the cartridge trait gained `cpu_write_at` and `Board`
+hands the dot over with every write. Nine of the fourteen games on
+those three boards run; the five that do not are blocked on the
+vertical blank, not on a board (below).
+
+MMC3 arrived 2026-09-20 for the games that bank, Super Mario
 Bros. 2 and 3 among them: PRG and CHR in banks either way up, mirroring
 under software, and the scanline counter that watches PPU A12 and pulls
 /IRQ low, which is how those games split the screen. Four of blargg's
@@ -30,6 +46,19 @@ a cartridge's /IRQ to the core, not on the board's count, which
 outside at 241 clocks a frame. Getting there needed the 2C02's stepper
 to fetch the sprite slots it will not draw, since a line with no sprites
 still moves A12 on the part (2c02 @ 10b9089).
+
+**Open, and it costs five games: blargg's `ppu_vbl_nmi` 01, 02 and 03
+fail where `docs/n5-report.md` records them passing.** `01-vbl_basics`
+says "VBL period is way off" (its #2), and 02 and 03 are the set and
+clear times of the same flag; `04-nmi_control` and `09-even_odd_frames`
+still pass, so it is the flag's period with rendering OFF and not the
+NMI edge. Paperboy, Goonies II and Blaster Master wait on that flag and
+never turn rendering on; the Legend of Zelda and Battle Chess turn it on
+and draw one flat colour. The boards are not the cause: Paperboy is
+CNROM, whose PRG does not move at all. Located with
+`examples/where-it-sits`. Not bisected: the commits between the n5
+report and here cross four repositories, and two of them need their
+pins moved together to build at all.
 
 N8 (the shell) is built and gated as far as a box without a screen can
 gate it (`docs/n8-report.md`): `nes-shell rom.nes` puts the console in
@@ -143,8 +172,19 @@ cargo test --workspace            # every part against its datasheet,
                                   # recordings beside; MUTATE_SOUND=1
                                   # red, its own variable because the
                                   # 2A03 rung reads MUTATE itself)
+cargo run --release -p nes-console --example where-it-sits -- rom.nes [frames]
+                                  # a game that never draws, located:
+                                  # the opcode fetch addresses counted
+                                  # (TOP=n rows, COUNT=addr one by
+                                  # name), WRITES=1 or WRITES=xxxx the
+                                  # register writes, TRAP=xxxx the
+                                  # hundred fetches before an address is
+                                  # first reached, BUS=a-b every CPU
+                                  # cycle in a half-cycle range. Super
+                                  # Mario Bros. 2's crash was walked
+                                  # back to one branch this way
 cargo run --release -p nes-console --example run-rom -- rom.nes [frames] [out.ppm]
-                                  # an NROM, MMC3 or GxROM ROM through the
+                                  # a ROM on any of the six boards through the
                                   # console: the
                                   # last frame as PPM, the rate, and
                                   # blargg's $6000 report if there is one;

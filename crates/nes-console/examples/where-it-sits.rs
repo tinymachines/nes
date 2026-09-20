@@ -9,7 +9,12 @@
 //! which address the loop is at. Then:
 //!
 //!   WRITES=1    every write above $2000, with the half-cycle it landed
-//!               on: what the program managed before it stopped
+//!               on: what the program managed before it stopped.
+//!               WRITES=xxxx narrows it to one register, uncapped,
+//!               which is how "does this game ever turn rendering on"
+//!               is answered ($2001)
+//!   TOP=n       how many rows of the histogram to print (12)
+//!   COUNT=xxxx  how many opcode fetches landed on one address
 //!   TRAP=xxxx   the hundred opcode fetches before the program first
 //!               reaches that address, which is how it got there
 //!   BUS=a-b     every CPU cycle in that half-cycle range, address, byte
@@ -37,7 +42,11 @@ fn main() {
     let chr_ram = rom.chr_ram.then(|| vec![0u8; 0x2000]);
     let cart = rom.cart().expect("a cartridge this console has");
     let mut c = Console::with_prg_ram(cart, chr_ram, Alignment::default(), true);
-    let writes = std::env::var_os("WRITES").is_some();
+    // WRITES=1 is every register write, capped so a long run stays
+    // readable; WRITES=<hex address> is one register, uncapped.
+    let writes_env = std::env::var("WRITES").ok();
+    let writes = writes_env.is_some();
+    let only: Option<u16> = writes_env.as_deref().filter(|v| v.len() == 4).and_then(|v| u16::from_str_radix(v, 16).ok());
     // TRAP=addr prints the last hundred opcode fetches before the
     // program first reaches that address, which is what says how it got
     // there when the address is a crash.
@@ -87,9 +96,11 @@ fn main() {
                     println!("  hc {h}: {} {:04x} {:02x}{}", if f.rw { "read " } else { "write" }, f.ab, f.db, if f.sync { "   <- opcode" } else { "" });
                 }
             }
-            if writes && !f.rw && f.clk0 && (0x2000..0x8000).contains(&f.ab) {
+            if writes && !f.rw && f.clk0 && only.is_none_or(|x| x == f.ab) && (0x2000..0x8000).contains(&f.ab) {
                 let line = format!("{:04x} <- {:02x}", f.ab, f.db);
-                if line != last_write && shown < 400 {
+                // Narrowed to one register, every write is printed,
+                // repeats included: the count is the measurement.
+                if (only.is_some() || (line != last_write && shown < 400)) && !(only.is_some() && line == last_write && false) {
                     println!("  hc {}: {line}", c.cpu_half_cycles);
                     last_write = line;
                     shown += 1;
@@ -101,7 +112,16 @@ fn main() {
     v.sort_by_key(|&(_, n)| std::cmp::Reverse(n));
     let total: u64 = v.iter().map(|&(_, n)| n).sum();
     println!("{} distinct opcode addresses over {frames} frames, {total} fetches", v.len());
-    for &(a, n) in v.iter().take(12) {
+    let top: usize = std::env::var("TOP").ok().and_then(|v| v.parse().ok()).unwrap_or(12);
+    for &(a, n) in v.iter().take(top) {
         println!("  {a:04x}: {n} ({:.1}%)", 100.0 * n as f64 / total as f64);
+    }
+    // COUNT=addr: one address by name, whether or not it is near the top.
+    // A fetch stands at the pins for several master half-steps, so the
+    // raw count is divided by the twelve a cycle takes; what it is for is
+    // comparing one run with another, not an absolute.
+    if let Some(a) = std::env::var("COUNT").ok().and_then(|v| u16::from_str_radix(&v, 16).ok()) {
+        let n = v.iter().find(|&&(x, _)| x == a).map(|&(_, n)| n).unwrap_or(0);
+        println!("{a:04x}: {n} raw fetch half-steps over {frames} frames");
     }
 }
