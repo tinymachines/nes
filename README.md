@@ -31,12 +31,14 @@ test is MMC1's serial port: a write to its window carries ONE bit, and
 two writes on CONSECUTIVE CPU cycles are one write, which is what an
 RMW instruction on the window is. The dot that decides it is the
 console's, so the cartridge trait gained `cpu_write_at` and `Board`
-hands the dot over with every write. Nine of the fourteen games on
-those three boards draw a picture; the five that do not are blocked on
-the vertical blank, not on a board (below). Thirteen of the twenty draw
-in all: the sixth blank is Super Mario Bros., whose only dump is one the
-reader's own CRC32 could not match, so it has two possible causes and
-means nothing until that cartridge is read again.
+hands the dot over with every write.
+
+**Eighteen of the nineteen play.** The one that does not is Super Mario
+Bros., whose only dump is one the reader's own CRC32 could not match:
+that cartridge wants reading again before its blank screen means
+anything. Nothing here has been played past its title screen with a
+controller, so "plays" is "draws its own picture from its own program",
+which is what the console can say on its own.
 
 MMC3 arrived 2026-09-20 for the games that bank, Super Mario
 Bros. 2 and 3 among them: PRG and CHR in banks either way up, mirroring
@@ -52,18 +54,23 @@ outside at 241 clocks a frame. Getting there needed the 2C02's stepper
 to fetch the sprite slots it will not draw, since a line with no sprites
 still moves A12 on the part (2c02 @ 10b9089).
 
-**Open, and it costs five games: blargg's `ppu_vbl_nmi` 01, 02 and 03
-fail where `docs/n5-report.md` records them passing.** `01-vbl_basics`
-says "VBL period is way off" (its #2), and 02 and 03 are the set and
-clear times of the same flag; `04-nmi_control` and `09-even_odd_frames`
-still pass, so it is the flag's period with rendering OFF and not the
-NMI edge. Paperboy, Goonies II and Blaster Master wait on that flag and
-never turn rendering on; the Legend of Zelda and Battle Chess turn it on
-and draw one flat colour. The boards are not the cause: Paperboy is
-CNROM, whose PRG does not move at all. Located with
-`examples/where-it-sits`. Not bisected: the commits between the n5
-report and here cross four repositories, and two of them need their
-pins moved together to build at all.
+Five of those games were stuck for an afternoon on what looked like a
+vertical-blank regression, and were not. blargg's `ppu_vbl_nmi` 01, 02
+and 03 had started failing where `docs/n5-report.md` records them
+passing, `01-vbl_basics` saying "VBL period is way off"; Paperboy,
+Goonies II and Blaster Master never turned rendering on, and the Legend
+of Zelda and Battle Chess drew one flat colour. The flag itself was
+exact the whole time: `examples/vbl-probe` puts its rise at (241, 2),
+its fall at (261, 2) and its period at 29780 or 29781 CPU cycles, with
+rendering on or off. What was wrong was one branch. `01-vbl_basics`
+reads $2002 and does `jpl test_failed`, which is `bmi` over a `jmp`, and
+rung 3 had stopped taking a BMI that is taken, forward, on its page:
+the commonest branch on the chip, dropped by the selector mask search
+hours earlier in tinymachines/6502 while fixing a different branch bug.
+The walk from the flat screen to the instruction was
+`examples/where-it-sits` and `examples/vbl-probe`, and the fix is 6502 @
+3805107. All five draw now, and `ppu_vbl_nmi` is back to the 5 of 10
+the n5 report records, which was never stale.
 
 N8 (the shell) is built and gated as far as a box without a screen can
 gate it (`docs/n8-report.md`): `nes-shell rom.nes` puts the console in
@@ -188,6 +195,21 @@ cargo run --release -p nes-console --example where-it-sits -- rom.nes [frames]
                                   # cycle in a half-cycle range. Super
                                   # Mario Bros. 2's crash was walked
                                   # back to one branch this way
+cargo run --release -p nes-console --example vbl-probe -- [rom.nes] [frames]
+                                  # every edge of the PPU's vblank flag:
+                                  # where it fell in the frame and how
+                                  # many CPU cycles since the last rise.
+                                  # With no ROM it runs its own (turn
+                                  # rendering off and spin; RENDER=1 for
+                                  # on), so the flag is the only thing
+                                  # moving. READS=1 the CPU's own $2002
+                                  # reads beside the edges, NEAR=1 only
+                                  # the ones landing on the set dot,
+                                  # REPORT=1 the last forty reads dumped
+                                  # when a blargg ROM stops running.
+                                  # The flag being right and the read
+                                  # being wrong are different faults and
+                                  # this is what tells them apart
 cargo run --release -p nes-console --example run-rom -- rom.nes [frames] [out.ppm]
                                   # a ROM on any of the six boards through the
                                   # console: the
