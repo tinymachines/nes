@@ -46,6 +46,18 @@
 //!      it cannot answer which frame, since F-1 and F+1 agree everywhere
 //!      but the sprite. Held on the synthesis (the frame found must be
 //!      F), recorded on a real record.
+//!   6. the frame's subcarrier origin named on both sides: the one the
+//!      encoder wrote for F-2 to F+2, and the one `recover_nes` measured
+//!      off the part's burst, with the difference at the trigger and
+//!      again GAP frames on. The origin steps by 4 samples on a full
+//!      frame and 8 on a short one, so it only ever alternates between
+//!      two of the three values and F-1 and F+1 always share one that F
+//!      does not: that is the mechanism behind measurement 5 naming a
+//!      parity rather than a frame. A difference that survives the GAP
+//!      step is a standing offset; 4 samples of it is one frame counted
+//!      short on one side and full on the other. Held on the synthesis
+//!      (where the part IS the model, so the difference must be 0, and
+//!      MUTATE_ORIGIN=1 must go red), recorded on a real record.
 //!
 //! SCRIPT, LATCH, TRIGGER_SAMPLE and KNOBS as capture-score reads them.
 //! Without a record the part's side is synthesised from the model's own
@@ -350,6 +362,11 @@ fn main() {
             (a, b)
         }
     };
+    // The origin `recover_nes` measured for each slice, kept before the
+    // frames are spent on luma. Measurement 6 is the only reader; until
+    // it existed this number was recovered on every run and discarded
+    // here, which is why the colour-phase item stayed open.
+    let (part_origin, part_origin_gap) = (p0.phase_at_origin.get(), p1.phase_at_origin.get());
     let (p0, p1) = (luma(dec, &p0), luma(dec, &p1));
     let p = print_split(&format!("part, the triggered frame against {gap} later"), &shifts(&p0, &p1));
 
@@ -667,10 +684,66 @@ fn main() {
     let blurred: Vec<Vec<f32>> = frames.iter().map(|f| blur_cycle(f)).collect();
     let content = decide("what moved", &blurred, &blur_cycle(&p0), by_dots());
 
+    // 6. The subcarrier origin, named on both sides. Measurement 5 reads
+    // the part's colour phase as a neighbour's, and a frame's phase step
+    // on this part is a third of a subcarrier cycle: the same four
+    // samples. Both sides already carry an origin, and neither was ever
+    // put beside the other, so this prints them.
+    //
+    // What is NOT evidence is the two numbers differing. The model's is
+    // a CHOICE: `Picture` seeds frame 0 at phase 0 because the encoder
+    // needs somewhere to start, and nothing measured it. The part starts
+    // where its power-on put it. So an absolute difference is the
+    // expected state of affairs.
+    //
+    // What IS evidence is the difference being the SAME at both slices,
+    // which are `gap` frames apart and so have stepped the origin by a
+    // known amount. One difference that survives that step is a seed the
+    // model could simply be given; two different ones mean the phase is
+    // not being carried the way the part carries it, which is a
+    // different fault with a different fix.
+    println!("6. the subcarrier origin, both sides (12 samples to a subcarrier cycle, 8 to a dot: four samples is a third of a cycle and half a dot)");
+    let model_origin = |j: isize| encoded[(chosen as isize + j) as usize].phase_at_origin.get();
+    let sample_dots = |s: u8| s as f64 / SAMPLES_PER_DOT;
+    println!(
+        "   the part: origin {part_origin} at the trigger, {part_origin_gap} {gap} frames on (it steps by {} over those {gap} frames)",
+        (part_origin_gap as i32 - part_origin as i32).rem_euclid(CYCLE_SAMPLES as i32)
+    );
+    print!("   the model:");
+    for j in -2isize..=2 {
+        print!(" F{j:+} {}", model_origin(j));
+    }
+    println!(" (F {} itself)", model_origin(0));
+    let diff = |a: u8, b: u8| (a as i32 - b as i32).rem_euclid(CYCLE_SAMPLES as i32);
+    let d0 = diff(part_origin, model_origin(0));
+    let d1 = diff(part_origin_gap, model_origin(gap as isize));
+    println!(
+        "   the part's origin less the model's, at F: {d0} samples ({:+.2} dots); at F+{gap}: {d1} samples",
+        sample_dots(d0 as u8)
+    );
+    let matching: Vec<isize> = (-2isize..=2).filter(|&j| model_origin(j) == part_origin).collect();
+    println!(
+        "   the model candidates whose origin the part's matches: {}",
+        if matching.is_empty() { "none".to_string() } else { matching.iter().map(|j| format!("F{j:+}")).collect::<Vec<_>>().join(", ") }
+    );
+    if d0 == d1 {
+        println!("   the difference SURVIVES the {gap}-frame step, so it is one constant the model's seed could carry, not a phase carried wrongly");
+    } else {
+        println!("   the difference does NOT survive the {gap}-frame step ({d0} then {d1}), so this is not a seed: the two sides are stepping the phase differently");
+    }
+
     if real.is_none() {
         let mut red = Vec::new();
         if m.first_moving.is_none() {
             red.push("the model shows no moving row: choose a latch where the screen scrolls".to_string());
+        }
+        // On synthesis the part IS the model's own frames, so the origin
+        // the recovery reads back has to be the origin the encoder wrote.
+        // This is what makes measurement 6 a claim rather than a print:
+        // MUTATE_ORIGIN=1 makes the recovery answer 0 instead of measuring,
+        // and must land here.
+        if d0 != 0 || d1 != 0 {
+            red.push(format!("the origin does not survive the roundtrip: the model encoded F at {} and F+{gap} at {}, the recovery read {part_origin} and {part_origin_gap}", model_origin(0), model_origin(gap as isize)));
         }
         if (m.last_still, m.first_moving) != (p.last_still, p.first_moving) {
             red.push(format!("the brackets differ: model {:?}..{:?}, part {:?}..{:?}", m.last_still, m.first_moving, p.last_still, p.first_moving));
