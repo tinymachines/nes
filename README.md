@@ -53,16 +53,40 @@ which is what the console can say on its own.
 MMC3 arrived 2026-09-20 for the games that bank, Super Mario
 Bros. 2 and 3 among them: PRG and CHR in banks either way up, mirroring
 under software, and the scanline counter that watches PPU A12 and pulls
-/IRQ low, which is how those games split the screen. Four of blargg's
-six `mmc3_test_2` ROMs pass and `tests/mmc3.rs` names what the other two
-say: `6-MMC3_alt` is the other chip revision (his Crystalis; this board
-is the one his Super Mario Bros. 3 is on, and `5-MMC3` holds it), and
-`4-scanline_timing` fails on where inside a CPU cycle the console hands
-a cartridge's /IRQ to the core, not on the board's count, which
-`2-details` passes and a purpose-written cartridge confirms from
-outside at 241 clocks a frame. Getting there needed the 2C02's stepper
-to fetch the sprite slots it will not draw, since a line with no sprites
-still moves A12 on the part (2c02 @ 10b9089).
+/IRQ low, which is how those games split the screen. Getting there
+needed the 2C02's stepper to fetch the sprite slots it will not draw,
+since a line with no sprites still moves A12 on the part (2c02 @
+10b9089).
+
+Five of blargg's six `mmc3_test_2` ROMs pass. The sixth tests the other
+chip revision (his Crystalis; this board is the one his Super Mario
+Bros. 3 is on, and `5-MMC3` holds it), and `tests/mmc3.rs` records what
+it says rather than tolerating it.
+
+`4-scanline_timing` joined them on 2026-09-22 and took two things,
+because it brackets the interrupt's arrival to ONE PPU clock and the
+console was wrong by more than that in two independent ways. The A12
+filter was one dot too permissive: nine dots of A12 low is exactly three
+CPU cycles, so the third falling edge of M2 lands on the rise rather
+than before it, and with the background at $1000 a frame came to 242
+clocks on alternate frames where the part makes 241 (nes-bus v0.1.6, and
+`examples/mmc3-probe` now runs its own cartridge in either mode so the
+count reads straight off). And the cartridge's /IRQ reached the core
+with no delay at all, as a level read at whatever CPU half-cycle came
+next. It is a LINE: `CART_IRQ_DELAY` holds it behind the board by
+seventeen master half-steps, twelve to a CPU half-cycle and eight to a
+dot, which is the only grain fine enough to hold a one-clock bracket.
+
+Seventeen is a fit, labelled as one. `examples/irq-sweep` runs the ROM
+at every delay and prints what each reports: the ROM allows fourteen
+through twenty-one and no further, and seventeen is the middle. It is
+also more than half a CPU cycle, which is far too long for a wire from
+pin 15, so most of what it stands in for is likely where inside its
+cycle the core samples IRQ rather than anything the cartridge does.
+What would settle it is a scope on pin 15 against the CPU's phi2, which
+is in nes-bench's open items, and so is the filter's own phase
+question: counting M2's falls is the rule the part has, and a console
+knows the alignment a constant in dots cannot express.
 
 Five of those games were stuck for an afternoon on what looked like a
 vertical-blank regression, and were not. blargg's `ppu_vbl_nmi` 01, 02
@@ -205,6 +229,12 @@ cargo run --release -p nes-console --example where-it-sits -- rom.nes [frames]
                                   # cycle in a half-cycle range. Super
                                   # Mario Bros. 2's crash was walked
                                   # back to one branch this way
+cargo run --release -p nes-console --example irq-sweep -- [rom.nes] [max]
+                                  # blargg's 4-scanline_timing at every
+                                  # /IRQ delay from 0 to max master
+                                  # half-steps, and what each reports:
+                                  # the measurement behind CART_IRQ_DELAY
+                                  # and the band the ROM allows
 cargo run --release -p nes-console --example vbl-probe -- [rom.nes] [frames]
                                   # every edge of the PPU's vblank flag:
                                   # where it fell in the frame and how

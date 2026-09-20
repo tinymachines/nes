@@ -3,27 +3,27 @@
 //!
 //! The suite is `mmc3_test_2`, whose ROMs clock the board's counter by
 //! hand through $2006 and then against the PPU's own fetches, and
-//! report through the $6000 window. Four of the six pass and the two
-//! that do not are named here with the reason:
+//! report through the $6000 window. Five of the six pass. The one that
+//! does not tests the OTHER chip: blargg's readme names the two, his
+//! Crystalis (revision A) stopping when $C000 holds 0 and his Super
+//! Mario Bros. 3 and Mega Man 3 (revision B) reloading every time.
+//! `nes-bus`'s board is the revision B one, which is the board the
+//! games this console is for are on, and `5-MMC3` is the ROM that
+//! holds it.
 //!
-//! - `6-MMC3_alt` tests the OTHER chip. blargg's readme names the two:
-//!   his Crystalis (revision A) stops interrupting when $C000 holds 0,
-//!   his Super Mario Bros. 3 and Mega Man 3 (revision B) reload every
-//!   time. `nes-bus`'s board is the revision B one, which is the board
-//!   the games this console is for are on, and `5-MMC3` is the ROM that
-//!   holds it.
-//! - `4-scanline_timing` measures the interrupt to PPU clock accuracy.
-//!   The count and its place are right (`2-details` counts the 241
-//!   clocks of a frame and passes, and the rise sits on dot 261, where
-//!   the switch-level chip's own probe puts the first sprite pattern
-//!   fetch). What it fails on is the last dot or two of the path from
-//!   the cartridge's pin into the core: held back by one CPU half-cycle
-//!   this ROM still reads the interrupt as early, and by two it reads
-//!   it as late, so the console presents a cartridge's /IRQ somewhere
-//!   inside a half-cycle of where the part does. That is a console
-//!   question, not a board one, and it is in nes-bench's open items.
+//! `4-scanline_timing` joined the passing list on 2026-09-22, and it
+//! took two things, because it brackets the interrupt's arrival to ONE
+//! PPU clock and the console was wrong by more than that in two
+//! independent ways:
 //!
-//! A game's split is a line wide, so neither costs one a line.
+//! - The A12 filter was one dot too permissive, so with the background
+//!   at $1000 the rise at the first pattern fetch of line 0 was counted
+//!   and a frame came to 242 clocks on alternate frames. `A12_FILTER_DOTS`
+//!   says why nine is the wrong rounding of "three falling edges of M2".
+//! - The cartridge's /IRQ reached the core with no delay at all, as a
+//!   level read at whatever CPU half-cycle came next. It is a line, and
+//!   `CART_IRQ_DELAY` holds it behind the board by sixteen master
+//!   half-steps, which `examples/irq-sweep` is the measurement of.
 //!
 //! The ROMs are read from the nes-test-roms checkout (NES_TEST_ROMS, or
 //! ~/roms/nes-test-roms) and the test SKIPS by name without it.
@@ -71,22 +71,21 @@ fn blarggs_mmc3_roms_say_what_this_board_is() {
         return;
     };
     let dir = base.join("mmc3_test_2").join("rom_singles");
-    // The four that must pass. They are the whole of what a game uses:
+    // The five that must pass. They are the whole of what a game uses:
     // that the counter clocks at all, that it clocks once a line and
     // 241 times a frame, that a game can clock it by hand through
-    // $2006, and that the reload and the interrupt behave as the board
-    // Super Mario Bros. 3 is on.
-    for rom in ["1-clocking", "2-details", "3-A12_clocking", "5-MMC3"] {
-        let (code, text) = report(&dir.join(format!("{rom}.nes")), 600);
+    // $2006, that the interrupt lands where the part puts it to one PPU
+    // clock, and that the reload behaves as the board Super Mario Bros.
+    // 3 is on.
+    for rom in ["1-clocking", "2-details", "3-A12_clocking", "4-scanline_timing", "5-MMC3"] {
+        let (code, text) = report(&dir.join(format!("{rom}.nes")), 900);
         assert_eq!(code, 0, "{rom}: {text}");
     }
-    // The two that do not, each failing where this file says it does.
-    // Recorded, not tolerated: if either starts passing, or fails
-    // somewhere else, this says so.
+    // The one that does not, failing where this file says it does.
+    // Recorded, not tolerated: if it starts passing, or fails somewhere
+    // else, this says so.
     let (code, text) = report(&dir.join("6-MMC3_alt.nes"), 600);
     assert_eq!((code, text.lines().next().unwrap_or("")), (2, "IRQ shouldn't be set when reloading to 0 due to counter naturally reaching 0 previously"), "6-MMC3_alt is the other revision; this board is the one Super Mario Bros. 3 is on");
-    let (code, text) = report(&dir.join("4-scanline_timing.nes"), 600);
-    assert_eq!((code, text.lines().next().unwrap_or("")), (2, "Scanline 0 IRQ should occur later when $2000=$08"), "the interrupt's place inside a CPU cycle, not the board's count");
 }
 
 /// The same claim from outside a ROM that does nothing else: a

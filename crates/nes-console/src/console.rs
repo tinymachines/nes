@@ -13,6 +13,39 @@ use v6502_pins::PinEngine;
 
 use crate::board::{Board, CpuBus};
 
+/// How far behind the board a cartridge's /IRQ reaches the core, in
+/// master half-steps: twelve to a CPU half-cycle, eight to a PPU dot.
+///
+/// AUTHORED, with blargg's `mmc3_test_2/4-scanline_timing` as the
+/// oracle and nothing else. That ROM brackets the interrupt's arrival
+/// to ONE PPU clock: it runs the same twelve cases twice, a clock apart,
+/// and each pair must land on opposite sides of a fixed instruction
+/// (`asl irq_flag` in its handler against an `inc` in line, so $21 means
+/// the interrupt came first and $22 that it did not). A bracket that
+/// tight cannot be met by handing the core the board's own level at
+/// whatever CPU half-cycle comes next, which is what this console did
+/// until 2026-09-22: a CPU half-cycle is a dot and a half, so stepping
+/// by one steps over the answer.
+///
+/// `examples/irq-sweep` is the measurement: every delay from 0 up, the
+/// ROM run at each, and what each one reports. The ROM allows fourteen
+/// through twenty-one and no further, eight values wide, and seventeen
+/// is the middle of that band. Re-measure it after anything that moves
+/// where the line is watched: making the watch exact rather than every
+/// master half-step shifted the whole band by one, which is what a
+/// zero point moving looks like.
+///
+/// Two things this number is NOT. It is not a propagation time anybody
+/// measured on a part. And at fourteen to twenty-one master half-steps
+/// it is more than half a CPU cycle, which is far too long for a wire
+/// from pin 15 to the CPU: whatever it is standing in for, most of it
+/// is likely where inside its cycle the core samples IRQ, which is
+/// rung 3's business and not the cartridge's. Both are the same open
+/// item in nes-bench: a scope on pin 15 against the CPU's phi2 turns
+/// the middle of a band into a number, and would say which end of the
+/// path the slack belongs to.
+pub const CART_IRQ_DELAY: u64 = 17;
+
 /// Which of the twelve master half-steps the CPU's half-cycle lands on,
 /// and which of the eight the PPU's dot does. MEASURED off the two
 /// switch-level chips' own power-on recipes, each stepped on its master
@@ -89,6 +122,15 @@ pub struct Console {
     /// (`reset_button`). The PPU's /RES is not driven: v2c02-fast has no
     /// reset, so a warm reset here is the CPU's alone, and says so.
     pub res_n: bool,
+    /// The master half-step the cartridge's /IRQ went low at, or None
+    /// while it is open. The core is not given it until
+    /// `cart_irq_delay` half-steps have passed.
+    cart_irq_low_since: Option<u64>,
+    /// How far the cartridge's /IRQ is behind the board that drives it,
+    /// in master half-steps (twelve to a CPU half-cycle, eight to a PPU
+    /// dot). [`CART_IRQ_DELAY`] is where the number comes from; a probe
+    /// sweeps it.
+    pub cart_irq_delay: u64,
 }
 
 /// Where the vertical sync begins in the PPU's frame, as the switch-level
@@ -123,12 +165,27 @@ impl Console {
     pub fn with_prg_ram(cart: Box<dyn Cartridge>, chr_ram: Option<Vec<u8>>, alignment: Alignment, prg_ram: bool) -> Console {
         let board = Board::new(cart, chr_ram, prg_ram);
         let cpu = Rung::with_bus(Box::new(CpuBus(board.clone())), v2a03_micro::STACK_AT_H0_MEASURED);
-        Console { board, cpu, cpu_trace: None, alignment, master: 0, cpu_half_cycles: 0, dots: 0, frames: Vec::new(), sound: None, res_n: true }
+        Console { board, cpu, cpu_trace: None, alignment, master: 0, cpu_half_cycles: 0, dots: 0, frames: Vec::new(), sound: None, res_n: true, cart_irq_low_since: None, cart_irq_delay: CART_IRQ_DELAY }
     }
 
     /// One master half-step: the PPU dot and the CPU half-cycle that
     /// fall on it, PPU first (its /INT and the APU's IRQ are what the
     /// CPU samples as its half-cycle begins).
+    /// The cartridge's /IRQ is a LINE, not a value read when the core
+    /// happens to look: the board pulls it low inside a PPU dot and it
+    /// reaches the core some way after (`CART_IRQ_DELAY`). Watched at
+    /// the only two points that can move it, a PPU bus access and a CPU
+    /// write, which is exact and a quarter the cost of looking every
+    /// master half-step (about 15% of the console's rate, measured on
+    /// Super Mario Bros. 3).
+    fn watch_cart_irq(&mut self, m: u64) {
+        if self.board.borrow().cart.borrow().cart.irq() {
+            self.cart_irq_low_since.get_or_insert(m);
+        } else {
+            self.cart_irq_low_since = None;
+        }
+    }
+
     pub fn master_half_step(&mut self) {
         let m = self.master;
         if m % 8 == self.alignment.ppu_phase as u64 {
@@ -142,6 +199,7 @@ impl Console {
                 self.frames.push(f);
             }
             self.dots += 1;
+            self.watch_cart_irq(m);
         }
         if m >= self.alignment.cpu_phase as u64 && (m - self.alignment.cpu_phase as u64).is_multiple_of(12) {
             // Where this half-cycle begins inside the dot last stepped,
@@ -152,10 +210,13 @@ impl Console {
             let irq = {
                 let apu = self.cpu.apu.borrow();
                 apu.frame_irq || apu.dmc.irq
-            } || self.board.borrow().cart.borrow().cart.irq();
+            } || self.cart_irq_low_since.is_some_and(|t| m >= t + self.cart_irq_delay);
             self.cpu.set_inputs(self.res_n, !irq, !nmi, true, false);
             self.cpu.half_step();
             self.cpu_half_cycles += 1;
+            // A write to $E000/$E001, or a $2006 that clocked the
+            // counter, moves the line inside this half-step.
+            self.watch_cart_irq(m);
             if let Some(s) = self.sound.as_mut() {
                 s.push(self.cpu.apu.borrow().codes());
             }
