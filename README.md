@@ -204,6 +204,17 @@ it. 16 tests.
 ## Commands
 
 ```bash
+python3 tools/check-self-counts.py   # every number this repository writes
+                                  # about ITSELF, against the thing it
+                                  # describes: the constants prose spells
+                                  # out in words, the boards `cart()`
+                                  # builds, the ROMs the MMC3 test walks,
+                                  # and whether the /IRQ band stays
+                                  # consistent with the constant sitting
+                                  # inside it. Built after CART_IRQ_DELAY
+                                  # moved from 16 to 17 and a test's own
+                                  # header went on saying sixteen.
+                                  # REQUIRE_ALL=1 makes a skip a failure.
 cargo test --workspace            # every part against its datasheet,
                                   # and the console's gates: the
                                   # plumbing, the NMI replay against the
