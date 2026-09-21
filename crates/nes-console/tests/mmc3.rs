@@ -22,7 +22,7 @@
 //!   says why nine is the wrong rounding of "three falling edges of M2".
 //! - The cartridge's /IRQ reached the core with no delay at all, as a
 //!   level read at whatever CPU half-cycle came next. It is a line, and
-//!   `CART_IRQ_DELAY` holds it behind the board by sixteen master
+//!   `CART_IRQ_DELAY` holds it behind the board by seventeen master
 //!   half-steps, which `examples/irq-sweep` is the measurement of.
 //!
 //! The ROMs are read from the nes-test-roms checkout (NES_TEST_ROMS, or
