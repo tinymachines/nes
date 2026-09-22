@@ -11,6 +11,7 @@ use nes_glue::controller::Buttons;
 
 pub struct Machine {
     console: Console,
+    battery: bool,
 }
 
 impl Machine {
@@ -20,7 +21,24 @@ impl Machine {
         let cart = r.cart().map_err(|e| format!("{e:?}"))?;
         let mut console = Console::with_prg_ram(cart, chr_ram, Alignment::default(), true);
         console.sound = Some(Sound::default());
-        Ok(Machine { console })
+        Ok(Machine { console, battery: r.battery })
+    }
+
+    /// Whether the header says the cartridge has a battery behind its
+    /// RAM: the one case where `battery_ram` is a save worth keeping.
+    pub fn has_battery(&self) -> bool {
+        self.battery
+    }
+
+    /// The cartridge RAM as it stands (`Console::battery_ram`); empty
+    /// where the board fits none.
+    pub fn battery_ram(&self) -> Vec<u8> {
+        self.console.battery_ram().unwrap_or_default()
+    }
+
+    /// A saved cartridge RAM back in, before the game runs.
+    pub fn set_battery_ram(&mut self, bytes: &[u8]) -> Result<(), String> {
+        self.console.set_battery_ram(bytes)
     }
 
     /// Run `n` frames; the newest is what `colour`, `emphasis` and
@@ -122,6 +140,18 @@ mod bridge {
 
         pub fn cpu_half_cycles(&self) -> f64 {
             self.m.cpu_half_cycles() as f64
+        }
+
+        pub fn has_battery(&self) -> bool {
+            self.m.has_battery()
+        }
+
+        pub fn battery_ram(&self) -> Vec<u8> {
+            self.m.battery_ram()
+        }
+
+        pub fn set_battery_ram(&mut self, bytes: &[u8]) -> Result<(), JsValue> {
+            self.m.set_battery_ram(bytes).map_err(|e| JsValue::from_str(&e))
         }
     }
 }

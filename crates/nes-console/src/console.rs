@@ -168,6 +168,31 @@ impl Console {
         Console { board, cpu, cpu_trace: None, alignment, master: 0, cpu_half_cycles: 0, dots: 0, frames: Vec::new(), sound: None, res_n: true, cart_irq_low_since: None, cart_irq_delay: CART_IRQ_DELAY }
     }
 
+    /// The cartridge RAM at $6000..$7FFF as it stands, or None where the
+    /// board fits none. This is `Board::prg_ram`, the console's own 8 KiB
+    /// (the one the browser build fits and blargg's cartridges report
+    /// through), which answers before a board's own RAM when both exist:
+    /// what a game with a battery saves lands here, so this is what a
+    /// save file is.
+    pub fn battery_ram(&self) -> Option<Vec<u8>> {
+        self.board.borrow().prg_ram.clone()
+    }
+
+    /// Put a saved cartridge RAM back: what a battery kept across
+    /// power-off. Refused with the reason when the board fits no RAM or
+    /// the bytes are not the RAM's size, rather than loading half a save.
+    pub fn set_battery_ram(&mut self, bytes: &[u8]) -> Result<(), String> {
+        let mut b = self.board.borrow_mut();
+        match b.prg_ram.as_mut() {
+            None => Err("this board fits no cartridge RAM".into()),
+            Some(ram) if ram.len() != bytes.len() => Err(format!("the cartridge RAM is {} bytes and the save is {}", ram.len(), bytes.len())),
+            Some(ram) => {
+                ram.copy_from_slice(bytes);
+                Ok(())
+            }
+        }
+    }
+
     /// One master half-step: the PPU dot and the CPU half-cycle that
     /// fall on it, PPU first (its /INT and the APU's IRQ are what the
     /// CPU samples as its half-cycle begins).

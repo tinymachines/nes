@@ -18,6 +18,9 @@ pub struct Ines {
     /// CHR RAM, 8 KiB, which NROM-with-RAM boards (and most of blargg's
     /// tests) use.
     pub chr_ram: bool,
+    /// Flags 6 bit 1: the cartridge has a battery behind its RAM, so what
+    /// a game writes at $6000..$7FFF is meant to outlive power-off.
+    pub battery: bool,
 }
 
 pub fn parse(bytes: &[u8]) -> Result<Ines, String> {
@@ -47,6 +50,7 @@ pub fn parse(bytes: &[u8]) -> Result<Ines, String> {
         mirroring,
         mapper,
         chr_ram: chr_banks == 0,
+        battery: f6 & 0x02 != 0,
     })
 }
 
