@@ -96,6 +96,104 @@ impl Machine {
     pub fn cpu_half_cycles(&self) -> u64 {
         self.console.cpu_half_cycles
     }
+
+    // ------------------------------------------------------------------
+    // Reads, for the roof's workbench: the machine as it stands, with no
+    // side effect (`Console`'s reads say what each is and is not). Flat
+    // byte vectors, because that is what crosses the boundary cheaply.
+    // ------------------------------------------------------------------
+
+    /// A, X, Y, S, P, PC low, PC high, then the last opcode fetch's
+    /// address low and high and the opcode: ten bytes.
+    pub fn cpu_state(&self) -> Vec<u8> {
+        let (a, x, y, s, p, pc) = self.console.cpu_registers();
+        let (fpc, op) = self.console.last_fetch();
+        vec![a, x, y, s, p, pc as u8, (pc >> 8) as u8, fpc as u8, (fpc >> 8) as u8, op]
+    }
+
+    /// `len` bytes of the CPU bus from `at`, wrapping at $FFFF, with no
+    /// side effect: registers answer with the open bus.
+    pub fn peek(&self, at: u16, len: u16) -> Vec<u8> {
+        (0..len).map(|i| self.console.peek(at.wrapping_add(i))).collect()
+    }
+
+    /// The PPU: line low, line high, dot low, dot high, ctrl, mask,
+    /// v low, v high, t low, t high, fine x, w, OAM address, vblank,
+    /// sprite 0 hit (1 if this frame), its line low, high, dot low, high,
+    /// sprite overflow: twenty bytes.
+    pub fn ppu_state(&self) -> Vec<u8> {
+        let s = self.console.ppu_status();
+        let (hit, hl, hd) = match s.spr0_hit {
+            Some((l, d)) => (1u8, l as u16, d as u16),
+            None => (0, 0, 0),
+        };
+        vec![
+            s.line as u8, (s.line >> 8) as u8, s.dot as u8, (s.dot >> 8) as u8,
+            s.ctrl, s.mask, s.v as u8, (s.v >> 8) as u8, s.t as u8, (s.t >> 8) as u8,
+            s.fine_x, s.w as u8, s.oamaddr, s.vbl as u8,
+            hit, hl as u8, (hl >> 8) as u8, hd as u8, (hd >> 8) as u8, s.spr_overflow as u8,
+        ]
+    }
+
+    /// Palette RAM, 32 bytes.
+    pub fn palette(&self) -> Vec<u8> {
+        self.console.ppu_palette().to_vec()
+    }
+
+    /// OAM, 256 bytes.
+    pub fn oam(&self) -> Vec<u8> {
+        self.console.ppu_oam().to_vec()
+    }
+
+    /// The nametable RAM, 2 KiB in the chip's order.
+    pub fn ciram(&self) -> Vec<u8> {
+        self.console.ciram()
+    }
+
+    /// The console's CHR-RAM, 8 KiB on a board that keeps it here; empty
+    /// where the cartridge carries its own CHR (the file has the tiles).
+    pub fn chr_ram(&self) -> Vec<u8> {
+        self.console.chr_ram().unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Machine;
+    use nes_console::testrom;
+
+    fn ines() -> Vec<u8> {
+        let mut rom = vec![0x4e, 0x45, 0x53, 0x1a, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        rom.extend(testrom::program());
+        rom.extend(testrom::chr());
+        rom
+    }
+
+    #[test]
+    fn the_reads_cross_the_boundary_as_the_documented_bytes() {
+        let mut m = Machine::new(&ines()).expect("the plumbing cartridge loads");
+        m.run_frames(2);
+        let cpu = m.cpu_state();
+        assert_eq!(cpu.len(), 10);
+        let pc = cpu[5] as u16 | ((cpu[6] as u16) << 8);
+        assert!(pc >= 0x8000, "the PC is in the cartridge: {pc:#06x}");
+        let fpc = cpu[7] as u16 | ((cpu[8] as u16) << 8);
+        assert!(fpc >= 0x8000);
+        assert_eq!(m.peek(0xfffc, 2).len(), 2);
+        assert_eq!(m.peek(0xffff, 3).len(), 3, "wraps rather than fails");
+        let ppu = m.ppu_state();
+        assert_eq!(ppu.len(), 20);
+        let line = ppu[0] as u16 | ((ppu[1] as u16) << 8);
+        let dot = ppu[2] as u16 | ((ppu[3] as u16) << 8);
+        assert!(line < 262 && dot < 341);
+        assert_eq!(m.palette().len(), 32);
+        assert_eq!(m.oam().len(), 256);
+        assert_eq!(m.ciram().len(), 0x800);
+        assert!(m.chr_ram().is_empty(), "CHR-ROM in the file: nothing here");
+        let before = m.cpu_half_cycles();
+        let _ = (m.cpu_state(), m.peek(0, 256), m.ppu_state(), m.palette(), m.oam(), m.ciram());
+        assert_eq!(m.cpu_half_cycles(), before, "reads take no time");
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -152,6 +250,34 @@ mod bridge {
 
         pub fn set_battery_ram(&mut self, bytes: &[u8]) -> Result<(), JsValue> {
             self.m.set_battery_ram(bytes).map_err(|e| JsValue::from_str(&e))
+        }
+
+        pub fn cpu_state(&self) -> Vec<u8> {
+            self.m.cpu_state()
+        }
+
+        pub fn peek(&self, at: u16, len: u16) -> Vec<u8> {
+            self.m.peek(at, len)
+        }
+
+        pub fn ppu_state(&self) -> Vec<u8> {
+            self.m.ppu_state()
+        }
+
+        pub fn palette(&self) -> Vec<u8> {
+            self.m.palette()
+        }
+
+        pub fn oam(&self) -> Vec<u8> {
+            self.m.oam()
+        }
+
+        pub fn ciram(&self) -> Vec<u8> {
+            self.m.ciram()
+        }
+
+        pub fn chr_ram(&self) -> Vec<u8> {
+            self.m.chr_ram()
         }
     }
 }

@@ -133,6 +133,24 @@ pub struct Console {
     pub cart_irq_delay: u64,
 }
 
+/// The PPU's registers and position, as `Console::ppu_status` reads them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PpuStatus {
+    pub line: usize,
+    pub dot: usize,
+    pub ctrl: u8,
+    pub mask: u8,
+    pub v: u16,
+    pub t: u16,
+    pub fine_x: u8,
+    pub w: bool,
+    pub oamaddr: u8,
+    pub vbl: bool,
+    /// Where sprite 0 hit this frame, (line, dot), or None so far.
+    pub spr0_hit: Option<(usize, usize)>,
+    pub spr_overflow: bool,
+}
+
 /// Where the vertical sync begins in the PPU's frame, as the switch-level
 /// 2C02 emits it (`2c02`'s `vsync-probe`: the sync-tip leg asserted from
 /// row 244 dot 280 through row 245 dot 257, three such pulses a row
@@ -191,6 +209,78 @@ impl Console {
                 Ok(())
             }
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Reads, for a debugger: what the machine holds, without moving it.
+    // Every one is a look at state the model already keeps; none steps
+    // anything, updates the open bus, or touches a mapper's counters.
+    // The CHR is deliberately not here: the only read path through a
+    // cartridge is the PPU's, and on a counting board it ticks the A12
+    // filter (MMC3) or flips the latch (MMC2), so a look at CHR-ROM is the
+    // file's to give, and CHR-RAM the console's (`chr_ram`).
+    // ------------------------------------------------------------------
+
+    /// The CPU's registers as the core holds them: A, X, Y, S, P, PC.
+    pub fn cpu_registers(&self) -> (u8, u8, u8, u8, u8, u16) {
+        self.cpu.core.registers()
+    }
+
+    /// The address the core last fetched an opcode from, and the opcode.
+    pub fn last_fetch(&self) -> (u16, u8) {
+        self.cpu.core.last_fetch()
+    }
+
+    /// A byte of the CPU bus with no side effect: the core's own operand
+    /// look (`Board::peek`). RAM and the cartridge answer; a register
+    /// answers with the open bus, because reading it would move it.
+    pub fn peek(&self, a: u16) -> u8 {
+        self.board.borrow_mut().peek(a)
+    }
+
+    /// Palette RAM, $3F00..$3F1F, as the PPU holds it.
+    pub fn ppu_palette(&self) -> [u8; 32] {
+        self.board.borrow().ppu.palette
+    }
+
+    /// OAM, the 64 sprites' four bytes each, as the PPU holds it.
+    pub fn ppu_oam(&self) -> [u8; 256] {
+        self.board.borrow().ppu.oam
+    }
+
+    /// The PPU's registers and where its beam is.
+    pub fn ppu_status(&self) -> PpuStatus {
+        let b = self.board.borrow();
+        let p = &b.ppu;
+        let pos = p.position();
+        PpuStatus {
+            line: pos.line,
+            dot: pos.dot,
+            ctrl: p.ctrl,
+            mask: p.mask,
+            v: p.v,
+            t: p.t,
+            fine_x: p.fine_x,
+            w: p.w,
+            oamaddr: p.oamaddr,
+            vbl: p.vbl,
+            spr0_hit: p.spr0_hit,
+            spr_overflow: p.spr_overflow,
+        }
+    }
+
+    /// The nametable RAM (U4, 2 KiB) as the chip holds it, in its own
+    /// address order; how the cartridge maps it is the mirroring.
+    pub fn ciram(&self) -> Vec<u8> {
+        let b = self.board.borrow();
+        let c = b.cart.borrow();
+        (0..0x800u16).map(|a| c.ciram.read(a)).collect()
+    }
+
+    /// The console's CHR-RAM, on a board that declared no CHR and keeps
+    /// it here; None where the cartridge carries its own CHR.
+    pub fn chr_ram(&self) -> Option<Vec<u8>> {
+        self.board.borrow().cart.borrow().chr_ram.clone()
     }
 
     /// One master half-step: the PPU dot and the CPU half-cycle that

@@ -171,8 +171,10 @@ impl Board {
 
     /// The core's look at an operand byte or a zero-page pointer: RAM and
     /// the cartridge only, no side effect, no open-bus update; a register
-    /// answers with the open bus rather than being read.
-    fn peek(&mut self, a: u16) -> u8 {
+    /// answers with the open bus rather than being read. Public because it
+    /// is also what a debugger's look at the bus should be: the model's
+    /// own definition of a read that changes nothing (`Console::peek`).
+    pub fn peek(&mut self, a: u16) -> u8 {
         let d = cpu_decode(a, true);
         if !d.ram_cs_n {
             self.wram.read(a)
