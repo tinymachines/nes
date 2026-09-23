@@ -98,3 +98,48 @@ fn a_peek_at_2002_leaves_the_vblank_flag_standing() {
     let _ = c.peek(0x2002);
     assert!(c.ppu_status().vbl, "still up: a peek is not a read of the register");
 }
+
+#[test]
+fn a_step_is_the_machine_s_own_unit_and_a_reset_is_the_front_panel_s() {
+    // NOPs in a row, then a jump back: every instruction step from inside
+    // the row moves the fetch by one byte.
+    let code: &[u8] = &[0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0x4c, 0x00, 0xc1];
+    let mut c = console(code);
+    c.run_frames(1);
+    // To an instruction boundary inside the row, then two more.
+    for _ in 0..3 {
+        assert!(c.step_instruction(200_000) < 200_000, "the core fetches");
+    }
+    let (a, _) = c.last_fetch();
+    c.step_instruction(200_000);
+    let (b, _) = c.last_fetch();
+    c.step_instruction(200_000);
+    let (d, _) = c.last_fetch();
+    let next = |pc: u16| if pc == 0xc108 { 0xc100 } else { pc + 1 };
+    assert_eq!(b, next(a), "one NOP, one byte: {a:#06x} then {b:#06x}");
+    assert_eq!(d, next(b), "and again: {b:#06x} then {d:#06x}");
+
+    let h = c.cpu_half_cycles;
+    assert_eq!(c.step_cpu_half_cycles(2), 24, "a CPU cycle is twenty-four master half-steps");
+    assert_eq!(c.cpu_half_cycles, h + 2);
+
+    let line = c.ppu_status().line;
+    let took = c.step_scanline();
+    assert!(took <= 341 * 8, "a scanline is at most 341 dots of eight: {took}");
+    assert_eq!(c.ppu_status().line, (line + 1) % 262);
+
+    // The reset button: the CPU restarts at the vector, RAM keeps what it
+    // holds (the pad's latch count is not zeroed either; see reset_button).
+    c.board.borrow_mut().wram.write(0x0010, 0x5a);
+    c.reset_button(89_342 * 8);
+    let (_, pc) = c.last_fetch();
+    let _ = pc;
+    assert_eq!(c.peek(0x0010), 0x5a, "RAM survives a warm reset");
+    // Released, the core comes back through its vector into the loop: the
+    // fetches after the reset are the program's, none of them elsewhere.
+    for _ in 0..4 {
+        c.step_instruction(400_000);
+        let (fetched, _) = c.last_fetch();
+        assert!((0xc100..=0xc108).contains(&fetched), "a fetch after reset is in the program: {fetched:#06x}");
+    }
+}

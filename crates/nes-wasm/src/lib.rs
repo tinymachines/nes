@@ -98,6 +98,71 @@ impl Machine {
     }
 
     // ------------------------------------------------------------------
+    // Control, for the roof's workbench: the machine moved by its own
+    // units, and the front panel's two buttons. Every step keeps the
+    // newest completed frame where `colour` finds it, as run_frames does.
+    // ------------------------------------------------------------------
+
+    fn keep_newest_frame(&mut self) {
+        if self.console.frames.len() > 1 {
+            let last = self.console.frames.pop().unwrap();
+            self.console.frames.clear();
+            self.console.frames.push(last);
+        }
+    }
+
+    /// The front panel's reset button, held for a frame's worth of master
+    /// half-steps and released: the CPU restarts at its vector; the PPU,
+    /// the cartridge and every memory keep what they hold.
+    pub fn reset(&mut self) {
+        self.console.reset_button(89_342 * 8);
+        self.keep_newest_frame();
+    }
+
+    /// `n` CPU half-cycles. Returns the master half-steps taken.
+    pub fn step_half_cycles(&mut self, n: u32) -> u32 {
+        let took = self.console.step_cpu_half_cycles(n as u64) as u32;
+        self.keep_newest_frame();
+        took
+    }
+
+    /// To the next instruction's opcode fetch. Returns the master
+    /// half-steps taken; a core that never fetches is stopped at the ceiling.
+    pub fn step_instruction(&mut self) -> u32 {
+        let took = self.console.step_instruction(4 * 89_342 * 8) as u32;
+        self.keep_newest_frame();
+        took
+    }
+
+    /// To the next scanline.
+    pub fn step_scanline(&mut self) -> u32 {
+        let took = self.console.step_scanline() as u32;
+        self.keep_newest_frame();
+        took
+    }
+
+    /// Whether a frame completed since the last time the planes were
+    /// taken: the page paints only then.
+    pub fn has_frame(&self) -> bool {
+        !self.console.frames.is_empty()
+    }
+
+    /// Controller 2, the same byte as `set_pad`.
+    pub fn set_pad2(&mut self, bits: u8) {
+        let b = Buttons {
+            a: bits & 1 != 0,
+            b: bits & 2 != 0,
+            select: bits & 4 != 0,
+            start: bits & 8 != 0,
+            up: bits & 16 != 0,
+            down: bits & 32 != 0,
+            left: bits & 64 != 0,
+            right: bits & 128 != 0,
+        };
+        self.console.set_pad(1, b);
+    }
+
+    // ------------------------------------------------------------------
     // Reads, for the roof's workbench: the machine as it stands, with no
     // side effect (`Console`'s reads say what each is and is not). Flat
     // byte vectors, because that is what crosses the boundary cheaply.
@@ -194,6 +259,28 @@ mod tests {
         let _ = (m.cpu_state(), m.peek(0, 256), m.ppu_state(), m.palette(), m.oam(), m.ciram());
         assert_eq!(m.cpu_half_cycles(), before, "reads take no time");
     }
+
+    #[test]
+    fn the_steps_move_the_machine_by_their_units() {
+        let mut m = Machine::new(&ines()).expect("the plumbing cartridge loads");
+        m.run_frames(1);
+        let h = m.cpu_half_cycles();
+        // From wherever the frame left the phase: two half-cycles is at most
+        // twenty-four master half-steps, and at least thirteen.
+        let took = m.step_half_cycles(2);
+        assert!((13..=24).contains(&took), "{took}");
+        assert_eq!(m.cpu_half_cycles(), h + 2);
+        let ppu = m.ppu_state();
+        let line = ppu[0] as u16 | ((ppu[1] as u16) << 8);
+        m.step_scanline();
+        let ppu = m.ppu_state();
+        assert_eq!(ppu[0] as u16 | ((ppu[1] as u16) << 8), (line + 1) % 262);
+        let took = m.step_instruction();
+        assert!(took > 0 && took < 4 * 89_342 * 8);
+        m.set_pad2(0x81);
+        m.reset();
+        assert!(m.cpu_half_cycles() > h);
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -250,6 +337,30 @@ mod bridge {
 
         pub fn set_battery_ram(&mut self, bytes: &[u8]) -> Result<(), JsValue> {
             self.m.set_battery_ram(bytes).map_err(|e| JsValue::from_str(&e))
+        }
+
+        pub fn reset(&mut self) {
+            self.m.reset();
+        }
+
+        pub fn step_half_cycles(&mut self, n: u32) -> u32 {
+            self.m.step_half_cycles(n)
+        }
+
+        pub fn step_instruction(&mut self) -> u32 {
+            self.m.step_instruction()
+        }
+
+        pub fn step_scanline(&mut self) -> u32 {
+            self.m.step_scanline()
+        }
+
+        pub fn has_frame(&self) -> bool {
+            self.m.has_frame()
+        }
+
+        pub fn set_pad2(&mut self, bits: u8) {
+            self.m.set_pad2(bits);
         }
 
         pub fn cpu_state(&self) -> Vec<u8> {

@@ -392,6 +392,58 @@ impl Console {
         }
     }
 
+    // ------------------------------------------------------------------
+    // Steps, for a debugger: the machine moved by one of its own units.
+    // Every one is `master_half_step` some number of times, so what a
+    // step does is exactly what running does, only stopped sooner. A
+    // frame that completes inside a step lands in `frames` as always.
+    // ------------------------------------------------------------------
+
+    /// Master half-steps until the CPU has run `n` more half-cycles.
+    pub fn step_cpu_half_cycles(&mut self, n: u64) -> u64 {
+        let target = self.cpu_half_cycles + n;
+        let mut took = 0;
+        while self.cpu_half_cycles < target {
+            self.master_half_step();
+            took += 1;
+        }
+        took
+    }
+
+    /// Master half-steps until the next instruction begins: the CPU's
+    /// SYNC pin rising, which is the opcode fetch. A ceiling in master
+    /// half-steps bounds a core that never fetches (held in reset, or in
+    /// DMA); the return is the half-steps taken either way.
+    pub fn step_instruction(&mut self, ceiling: u64) -> u64 {
+        let mut was = self.cpu.pins().sync;
+        let mut took = 0;
+        while took < ceiling {
+            self.master_half_step();
+            took += 1;
+            let now = self.cpu.pins().sync;
+            if now && !was {
+                break;
+            }
+            was = now;
+        }
+        took
+    }
+
+    /// Master half-steps until the PPU is on another scanline.
+    pub fn step_scanline(&mut self) -> u64 {
+        let line = self.board.borrow().ppu.position().line;
+        let mut took = 0;
+        // A line is 341 dots of eight master half-steps; twice that is a ceiling.
+        while took < 2 * 341 * 8 {
+            self.master_half_step();
+            took += 1;
+            if self.board.borrow().ppu.position().line != line {
+                break;
+            }
+        }
+        took
+    }
+
     /// The front panel's reset button, pressed for `hold` master half-steps
     /// and released: the CPU's warm reset (the rung's measured freewheel),
     /// the PPU, the cartridge and every memory left as they were. The
