@@ -184,6 +184,8 @@ pub struct Replay {
     events: Vec<Event>,
     next: usize,
     frames_checked: u64,
+    /// While the reset button is held: the master half-step it is let go.
+    release_at: Option<u64>,
 }
 
 /// Where a replay stands after a `run`.
@@ -201,7 +203,7 @@ impl Replay {
         if events.last().map(|e| e.kind) != Some(END) {
             return Err("the input log has no END: the recording was not stopped, or the file was cut short".into());
         }
-        Ok(Replay { events, next: 0, frames_checked: 0 })
+        Ok(Replay { events, next: 0, frames_checked: 0, release_at: None })
     }
 
     /// The pictures the log records.
@@ -224,6 +226,13 @@ impl Replay {
             if c.master > e.master {
                 return Err(format!("the replay passed master half-step {} without reaching the log's event there (kind {})", e.master, e.kind));
             }
+            // The reset button is let go where the console let it go, and
+            // before anything else due there: the live console finished its
+            // hold before it could take another input.
+            if self.release_at == Some(c.master) {
+                c.res_n = true;
+                self.release_at = None;
+            }
             if c.master < e.master {
                 c.master_half_step();
                 continue;
@@ -232,7 +241,17 @@ impl Replay {
             self.next += 1;
             match e.kind {
                 PAD => c.set_pad(e.port as usize, nes_glue::controller::Buttons::from_byte(e.value)),
-                RESET => c.reset_button(e.x as u64),
+                // Pressed here and held through the master half-steps that
+                // follow, as `Console::reset_button` holds it, but a step at
+                // a time: a picture completes inside the hold, and its event
+                // is checked where it fell.
+                RESET => {
+                    if let Some(t) = c.trace.as_mut() {
+                        t.input(2, 1, c.frames_done as u32);
+                    }
+                    c.res_n = false;
+                    self.release_at = Some(c.master + e.x as u64);
+                }
                 FRAME => {
                     let got = c.last_frame_digest.ok_or_else(|| format!("the log has a picture at master half-step {} and the replay completed none there", e.master))?;
                     if c.last_frame_master != Some(e.master) || got != e.x {

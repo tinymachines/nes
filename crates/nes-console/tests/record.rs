@@ -61,6 +61,14 @@ fn live() -> (Vec<u8>, Vec<u32>) {
     for (i, pad) in [0x00u8, 0x80, 0x80, 0x90, 0x10, 0x01, 0x00, 0x02].into_iter().enumerate() {
         c.set_pad(0, Buttons::from_byte(pad));
         run(&mut c, 3 + i);
+        // The front panel's button, once where a frame has just ended and
+        // once part way into one, as a reader who stepped would press it:
+        // the hold is a frame long, so a picture completes inside it, and
+        // only on the first is that at the hold's last step.
+        if i == 2 {
+            c.step_cpu_half_cycles(1001);
+            c.reset_button(89_342 * 8);
+        }
         if i == 4 {
             c.reset_button(89_342 * 8);
         }
@@ -87,7 +95,7 @@ fn a_run_logged_live_replays_to_the_same_pictures() {
     assert!(distinct.len() >= 4, "the pads must change the pictures, or a replay proves nothing: {} distinct", distinct.len());
     let events = record::events(&log).unwrap();
     assert_eq!(events.iter().filter(|e| e.kind == record::FRAME).count(), digests.len());
-    assert_eq!(events.iter().filter(|e| e.kind == record::RESET).count(), 1);
+    assert_eq!(events.iter().filter(|e| e.kind == record::RESET).count(), 2);
     // Eight sets, one of them a repeat: seven changes are events.
     assert_eq!(events.iter().filter(|e| e.kind == record::PAD).count(), 7);
 
@@ -105,8 +113,8 @@ fn a_log_that_says_anything_else_is_refused() {
     bad[i * record::EVENT_BYTES + 2] = 0x88;
     let err = replay(&bad).err().expect("a changed pad is refused");
     assert!(err.contains("left the recording"), "{err}");
-    // The reset moved a frame later.
-    let i = events.iter().position(|e| e.kind == record::RESET).unwrap();
+    // The second reset moved a frame later.
+    let i = events.iter().rposition(|e| e.kind == record::RESET).unwrap();
     let j = i + events[i..].iter().position(|e| e.kind == record::FRAME).unwrap();
     let mut bad: Vec<u8> = log.clone();
     let reset = bad[i * 16..i * 16 + 16].to_vec();
@@ -168,8 +176,8 @@ fn the_trace_says_what_the_cpu_did() {
     assert_eq!(frames, digests.len());
     // The log has seven pad events (its first is the pad as first set);
     // the trace records a change to the pad, and the first set is the
-    // pad the console powered on with: six, and the reset.
-    assert_eq!(inputs, 6 + 1, "six pad changes and the reset");
+    // pad the console powered on with: six, and the two resets.
+    assert_eq!(inputs, 6 + 2, "six pad changes and the resets");
     assert!(ldas > 100, "the LDA #imm check ran: {ldas}");
     // A frame is 341 x 262 dots, three to a CPU cycle, less the odd
     // frames' skipped dot: 29,780 and two thirds cycles, or near it.
