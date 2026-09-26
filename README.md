@@ -432,6 +432,17 @@ cargo check --target wasm32-unknown-unknown -p nes-console
 wasm-pack build crates/nes-wasm --target nodejs --out-dir /tmp/nes-wasm --release
 node tools/wasm-bench.mjs /tmp/nes-wasm rom.nes [frames]
                                   # the browser target, measured under node
+cargo run --release -p nes-wasm --example record-replay -- rom.nes frames "f:pad,..." out
+                                  # a run recorded as the page records one
+                                  # (every pad change, reset and picture's
+                                  # digest from power-on: record.rs), then
+                                  # replayed with the trace on, every
+                                  # picture held to the log; out.log and
+                                  # out.trace, the roof's flow tools read
+                                  # the second. tests/record.rs: a changed
+                                  # pad or a moved reset is refused, and
+                                  # the registers at each opcode fetch
+                                  # hold every LDA #imm before it
 cargo run --release -p nes-console --example trace-cpu -- rom.nes
 cargo run --release -p nes-console --example flat-cpu -- rom.nes <half-cycles>
                                   # the instruments: the CPU's bus through

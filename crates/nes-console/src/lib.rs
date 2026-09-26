@@ -24,6 +24,7 @@ pub mod console;
 pub mod ines;
 pub mod knobs;
 pub mod picture;
+pub mod record;
 pub mod sound;
 pub mod testrom;
 

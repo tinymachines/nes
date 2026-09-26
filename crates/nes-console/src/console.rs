@@ -131,6 +131,20 @@ pub struct Console {
     /// dot). [`CART_IRQ_DELAY`] is where the number comes from; a probe
     /// sweeps it.
     pub cart_irq_delay: u64,
+    /// When Some, every CPU cycle's bus, the registers at each opcode
+    /// fetch, the inputs and the pictures are appended (`record`'s trace,
+    /// for the roof's flow tools); None costs nothing.
+    pub trace: Option<crate::record::Trace>,
+    /// When Some, every pad change, reset press and picture is logged
+    /// (`record`'s input log: the recording a replay plays back).
+    pub inputs: Option<crate::record::InputLog>,
+    /// Pictures completed since power-on.
+    pub frames_done: u64,
+    /// The newest picture's digest and the master half-step after the one
+    /// it completed on, kept while a trace or a log is on (a replay holds
+    /// the log to them).
+    pub last_frame_digest: Option<u32>,
+    pub last_frame_master: Option<u64>,
 }
 
 /// The PPU's registers and position, as `Console::ppu_status` reads them.
@@ -183,7 +197,7 @@ impl Console {
     pub fn with_prg_ram(cart: Box<dyn Cartridge>, chr_ram: Option<Vec<u8>>, alignment: Alignment, prg_ram: bool) -> Console {
         let board = Board::new(cart, chr_ram, prg_ram);
         let cpu = Rung::with_bus(Box::new(CpuBus(board.clone())), v2a03_micro::STACK_AT_H0_MEASURED);
-        Console { board, cpu, cpu_trace: None, alignment, master: 0, cpu_half_cycles: 0, dots: 0, frames: Vec::new(), sound: None, res_n: true, cart_irq_low_since: None, cart_irq_delay: CART_IRQ_DELAY }
+        Console { board, cpu, cpu_trace: None, alignment, master: 0, cpu_half_cycles: 0, dots: 0, frames: Vec::new(), sound: None, res_n: true, cart_irq_low_since: None, cart_irq_delay: CART_IRQ_DELAY, trace: None, inputs: None, frames_done: 0, last_frame_digest: None, last_frame_master: None }
     }
 
     /// The cartridge RAM at $6000..$7FFF as it stands, or None where the
@@ -311,6 +325,18 @@ impl Console {
             }
             let frame = self.board.borrow_mut().ppu.step_dot();
             if let Some(f) = frame {
+                if self.trace.is_some() || self.inputs.is_some() {
+                    let d = crate::record::frame_digest(&f);
+                    self.last_frame_digest = Some(d);
+                    self.last_frame_master = Some(m + 1);
+                    if let Some(t) = self.trace.as_mut() {
+                        t.frame(d, self.frames_done as u32);
+                    }
+                    if let Some(l) = self.inputs.as_mut() {
+                        l.push(crate::record::FRAME, 0, 0, d, m + 1);
+                    }
+                }
+                self.frames_done += 1;
                 self.frames.push(f);
             }
             self.dots += 1;
@@ -335,12 +361,37 @@ impl Console {
             if let Some(s) = self.sound.as_mut() {
                 s.push(self.cpu.apu.borrow().codes());
             }
+            if self.trace.is_some() {
+                self.trace_cycle(nmi, irq);
+            }
             if let Some(t) = self.cpu_trace.as_mut() {
                 let core_rdy = v6502_pins::PinEngine::pins(&self.cpu.core).rdy;
                 t.push(CpuStep { master: m, nmi, irq, frame: self.cpu.pins(), core_rdy });
             }
         }
         self.master += 1;
+    }
+
+    /// The phi2 half of a CPU cycle into the trace (`record`): the bus,
+    /// and after an opcode fetch the registers.
+    fn trace_cycle(&mut self, nmi: bool, irq: bool) {
+        use crate::record::*;
+        let f = self.cpu.pins();
+        if !f.clk0 {
+            return;
+        }
+        let (prg, line) = {
+            let b = self.board.borrow();
+            let prg = if f.rw { b.cart.borrow().cart.prg_offset(f.ab) } else { None };
+            (prg, b.ppu.position().line as u16)
+        };
+        let flags = if f.rw { F_READ } else { 0 } | if f.sync { F_SYNC } else { 0 } | if nmi { F_NMI } else { 0 } | if irq { F_IRQ } else { 0 } | if f.rdy { 0 } else { F_HELD };
+        let t = self.trace.as_mut().unwrap();
+        t.cycle(f.ab, f.db, flags, prg);
+        if f.sync && f.rdy {
+            let (a, x, y, s, p, _) = self.cpu.core.registers();
+            t.regs((a, x, y, s, p), line);
+        }
     }
 
     pub fn run_master(&mut self, n: u64) {
@@ -450,6 +501,12 @@ impl Console {
     /// pad's latch count is NOT zeroed; a runner that counts from the
     /// release (as the bench's bridge does) takes the count here.
     pub fn reset_button(&mut self, hold: u64) {
+        if let Some(l) = self.inputs.as_mut() {
+            l.push(crate::record::RESET, 0, 0, hold as u32, self.master);
+        }
+        if let Some(t) = self.trace.as_mut() {
+            t.input(2, 1, self.frames_done as u32);
+        }
         self.res_n = false;
         self.run_master(hold);
         self.res_n = true;
@@ -461,6 +518,15 @@ impl Console {
     }
 
     pub fn set_pad(&mut self, i: usize, b: nes_glue::controller::Buttons) {
+        let was = self.board.borrow().pads[i].buttons;
+        if let Some(l) = self.inputs.as_mut() {
+            l.pad(i, b.as_byte(), self.master);
+        }
+        if was != b {
+            if let Some(t) = self.trace.as_mut() {
+                t.input(i as u8, b.as_byte(), self.frames_done as u32);
+            }
+        }
         self.board.borrow_mut().pads[i].buttons = b;
     }
 }

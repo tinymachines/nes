@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+use nes_console::record::{self, Played, Replay};
 use nes_console::{ines, Alignment, Console, Sound};
 use nes_glue::controller::Buttons;
 
@@ -14,14 +15,21 @@ pub struct Machine {
     battery: bool,
 }
 
+/// The console a ROM powers on into, and whether its header says a
+/// battery keeps its RAM: the one construction the page's console and a
+/// replay share, so a replay is the machine that was played.
+fn power_on(rom: &[u8]) -> Result<(Console, bool), String> {
+    let r = ines::parse(rom).map_err(|e| format!("{e:?}"))?;
+    let chr_ram = r.chr_ram.then(|| vec![0u8; 0x2000]);
+    let cart = r.cart().map_err(|e| format!("{e:?}"))?;
+    Ok((Console::with_prg_ram(cart, chr_ram, Alignment::default(), true), r.battery))
+}
+
 impl Machine {
     pub fn new(rom: &[u8]) -> Result<Machine, String> {
-        let r = ines::parse(rom).map_err(|e| format!("{e:?}"))?;
-        let chr_ram = r.chr_ram.then(|| vec![0u8; 0x2000]);
-        let cart = r.cart().map_err(|e| format!("{e:?}"))?;
-        let mut console = Console::with_prg_ram(cart, chr_ram, Alignment::default(), true);
+        let (mut console, battery) = power_on(rom)?;
         console.sound = Some(Sound::default());
-        Ok(Machine { console, battery: r.battery })
+        Ok(Machine { console, battery })
     }
 
     /// Whether the header says the cartridge has a battery behind its
@@ -147,6 +155,39 @@ impl Machine {
         !self.console.frames.is_empty()
     }
 
+    // ------------------------------------------------------------------
+    // Recording, for the roof's flow tools (`nes_console::record`): the
+    // inputs and a digest of every picture, from power-on. The trace is
+    // not kept here; a `Replayer` makes it from the log.
+    // ------------------------------------------------------------------
+
+    /// Start logging. Refused once the console has run: a recording
+    /// replays from power-on, so it starts there (the page loads the
+    /// cartridge again, puts the save back, then records).
+    pub fn record_start(&mut self) -> Result<(), String> {
+        if self.console.master != 0 {
+            return Err("a recording starts at power-on: load the cartridge again, then record".into());
+        }
+        self.console.inputs = Some(Default::default());
+        Ok(())
+    }
+
+    pub fn recording(&self) -> bool {
+        self.console.inputs.is_some()
+    }
+
+    /// Stop logging: the log, ended here. Empty if nothing was recording.
+    pub fn record_stop(&mut self) -> Vec<u8> {
+        let m = self.console.master;
+        match self.console.inputs.take() {
+            Some(mut l) => {
+                l.push(record::END, 0, 0, 0, m);
+                l.bytes
+            }
+            None => Vec::new(),
+        }
+    }
+
     /// Controller 2, the same byte as `set_pad`.
     pub fn set_pad2(&mut self, bits: u8) {
         let b = Buttons {
@@ -222,6 +263,50 @@ impl Machine {
     }
 }
 
+/// A recording played back into a console that has just powered on, with
+/// the trace on: the run itself, a chunk at a time, every picture held
+/// to the log's digest (a replay that parts from the log stops and says
+/// where). No sound: nothing the CPU does depends on it.
+pub struct Replayer {
+    console: Console,
+    replay: Replay,
+}
+
+impl Replayer {
+    /// `battery` is the cartridge RAM the recording started with (empty
+    /// for none), put back before the first step, as the page does.
+    pub fn new(rom: &[u8], battery: &[u8], log: &[u8]) -> Result<Replayer, String> {
+        let replay = Replay::new(log)?;
+        let (mut console, _) = power_on(rom)?;
+        if !battery.is_empty() {
+            console.set_battery_ram(battery)?;
+        }
+        console.trace = Some(Default::default());
+        Ok(Replayer { console, replay })
+    }
+
+    /// Play `pictures` more (or to the log's end); true when it ended.
+    pub fn run(&mut self, pictures: u32) -> Result<bool, String> {
+        let played = self.replay.run(&mut self.console, pictures as u64)?;
+        self.console.frames.clear();
+        Ok(played == Played::Ended)
+    }
+
+    /// The trace written since the last take (`record`'s 8-byte records).
+    pub fn take_trace(&mut self) -> Vec<u8> {
+        self.console.trace.as_mut().map(|t| std::mem::take(&mut t.bytes)).unwrap_or_default()
+    }
+
+    /// The pictures the log records, and how many the replay has matched.
+    pub fn frames(&self) -> u32 {
+        self.replay.frames() as u32
+    }
+
+    pub fn frames_checked(&self) -> u32 {
+        self.replay.frames_checked() as u32
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Machine;
@@ -258,6 +343,34 @@ mod tests {
         let before = m.cpu_half_cycles();
         let _ = (m.cpu_state(), m.peek(0, 256), m.ppu_state(), m.palette(), m.oam(), m.ciram());
         assert_eq!(m.cpu_half_cycles(), before, "reads take no time");
+    }
+
+    #[test]
+    fn a_recording_made_on_the_page_replays_with_its_trace() {
+        let mut m = Machine::new(&ines()).expect("the plumbing cartridge loads");
+        m.run_frames(1);
+        assert!(m.record_start().is_err(), "a recording starts at power-on");
+        let mut m = Machine::new(&ines()).unwrap();
+        m.record_start().unwrap();
+        assert!(m.recording());
+        for pad in [0u8, 8, 8, 0, 0x80] {
+            m.set_pad(pad);
+            m.run_frames(4);
+        }
+        m.reset();
+        m.run_frames(3);
+        let log = m.record_stop();
+        assert!(!m.recording());
+        assert!(m.record_stop().is_empty());
+        let mut r = super::Replayer::new(&ines(), &[], &log).expect("the log replays");
+        assert_eq!(r.frames(), 5 * 4 + 1 + 3, "every picture, the reset's hold included");
+        let mut trace = 0;
+        while !r.run(5).expect("each picture matches") {
+            trace += r.take_trace().len();
+        }
+        trace += r.take_trace().len();
+        assert_eq!(r.frames_checked(), r.frames());
+        assert!(trace > 24 * 29_000 * 8, "{trace} bytes of trace");
     }
 
     #[test]
@@ -389,6 +502,47 @@ mod bridge {
 
         pub fn chr_ram(&self) -> Vec<u8> {
             self.m.chr_ram()
+        }
+
+        pub fn record_start(&mut self) -> Result<(), JsValue> {
+            self.m.record_start().map_err(|e| JsValue::from_str(&e))
+        }
+
+        pub fn recording(&self) -> bool {
+            self.m.recording()
+        }
+
+        pub fn record_stop(&mut self) -> Vec<u8> {
+            self.m.record_stop()
+        }
+    }
+
+    #[wasm_bindgen]
+    pub struct NesReplay {
+        r: super::Replayer,
+    }
+
+    #[wasm_bindgen]
+    impl NesReplay {
+        #[wasm_bindgen(constructor)]
+        pub fn new(rom: &[u8], battery: &[u8], log: &[u8]) -> Result<NesReplay, JsValue> {
+            super::Replayer::new(rom, battery, log).map(|r| NesReplay { r }).map_err(|e| JsValue::from_str(&e))
+        }
+
+        pub fn run(&mut self, pictures: u32) -> Result<bool, JsValue> {
+            self.r.run(pictures).map_err(|e| JsValue::from_str(&e))
+        }
+
+        pub fn take_trace(&mut self) -> Vec<u8> {
+            self.r.take_trace()
+        }
+
+        pub fn frames(&self) -> u32 {
+            self.r.frames()
+        }
+
+        pub fn frames_checked(&self) -> u32 {
+            self.r.frames_checked()
         }
     }
 }
