@@ -188,6 +188,20 @@ impl Machine {
         }
     }
 
+    /// The log so far, ended here, while the recording carries on: what
+    /// the page keeps as it goes, so a recording outlives a page that is
+    /// closed without stopping it. Empty if nothing is recording.
+    pub fn record_so_far(&self) -> Vec<u8> {
+        match &self.console.inputs {
+            Some(l) => {
+                let mut l = l.clone();
+                l.push(record::END, 0, 0, 0, self.console.master);
+                l.bytes
+            }
+            None => Vec::new(),
+        }
+    }
+
     /// Controller 2, the same byte as `set_pad`.
     pub fn set_pad2(&mut self, bits: u8) {
         let b = Buttons {
@@ -374,6 +388,33 @@ mod tests {
     }
 
     #[test]
+    fn a_recording_so_far_replays_to_where_it_was_taken_and_the_recording_carries_on() {
+        let mut m = Machine::new(&ines()).unwrap();
+        assert!(m.record_so_far().is_empty(), "nothing recording, nothing so far");
+        m.record_start().unwrap();
+        for pad in [0u8, 8, 0x80] {
+            m.set_pad(pad);
+            m.run_frames(4);
+        }
+        let early = m.record_so_far();
+        assert!(m.recording(), "taking a copy does not stop it");
+        m.set_pad(4);
+        m.run_frames(5);
+        let log = m.record_stop();
+        // The copy is the log as it stood, with its own END.
+        assert_eq!(&log[..early.len() - 16], &early[..early.len() - 16]);
+        assert!(log.len() > early.len());
+        let mut r = super::Replayer::new(&ines(), &[], &early).expect("the copy replays");
+        assert_eq!(r.frames(), 12);
+        while !r.run(5).expect("each picture matches") {}
+        assert_eq!(r.frames_checked(), 12);
+        let mut r = super::Replayer::new(&ines(), &[], &log).expect("the whole log replays");
+        assert_eq!(r.frames(), 17);
+        while !r.run(5).expect("each picture matches") {}
+        assert_eq!(r.frames_checked(), 17);
+    }
+
+    #[test]
     fn the_steps_move_the_machine_by_their_units() {
         let mut m = Machine::new(&ines()).expect("the plumbing cartridge loads");
         m.run_frames(1);
@@ -514,6 +555,10 @@ mod bridge {
 
         pub fn record_stop(&mut self) -> Vec<u8> {
             self.m.record_stop()
+        }
+
+        pub fn record_so_far(&self) -> Vec<u8> {
+            self.m.record_so_far()
         }
     }
 
