@@ -456,6 +456,13 @@ cargo test --release -p nes-console --test state
                                   # (nes-wasm's record_start_here)
 NES_STATE_ROM=rom.nes cargo test --release -p nes-console --test state -- --ignored
                                   # the same on any cartridge, by hand
+cargo test --release -p nes-console --test breakpoints
+                                  # run_frames_until: the console stops as
+                                  # the CPU begins fetching an opcode at a
+                                  # chosen address, once a frame on the NMI
+                                  # handler, never on an address not run, and
+                                  # a run broken into stops makes the same
+                                  # pictures; MUTATE_BREAK=1 must go red
 cargo run --release -p nes-console --example trace-cpu -- rom.nes
 cargo run --release -p nes-console --example flat-cpu -- rom.nes <half-cycles>
                                   # the instruments: the CPU's bus through

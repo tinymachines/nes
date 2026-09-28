@@ -94,6 +94,22 @@ impl Machine {
         }
     }
 
+    /// `run_frames` with breakpoints: stops as the CPU begins fetching the
+    /// opcode at one of `at` and answers that address, or -1 when the
+    /// frames ran out first (`Console::run_frames_until`). The newest
+    /// picture is kept as `run_frames` keeps it; a stop before any
+    /// completed keeps the one before (`frames_done` says how many did).
+    pub fn run_frames_until(&mut self, n: usize, at: &[u16]) -> i32 {
+        let hit = self.console.run_frames_until(n, at);
+        self.keep_newest_frame();
+        hit.map_or(-1, |a| a as i32)
+    }
+
+    /// Pictures completed since power-on.
+    pub fn frames_done(&self) -> u64 {
+        self.console.frames_done
+    }
+
     pub fn colour(&self) -> Vec<u8> {
         self.console.frames.last().map(|f| f.colour.clone()).unwrap_or_default()
     }
@@ -540,6 +556,20 @@ mod tests {
     }
 
     #[test]
+    fn a_breakpoint_stops_the_page_s_run_and_keeps_a_picture_to_show() {
+        let mut m = Machine::new(&ines()).unwrap();
+        m.run_frames(2);
+        let nmi = m.peek(0xfffa, 2);
+        let nmi = nmi[0] as u16 | (nmi[1] as u16) << 8;
+        let before = m.frames_done();
+        let hit = m.run_frames_until(5, &[nmi]);
+        assert_eq!(hit, nmi as i32);
+        assert!(m.frames_done() - before < 5);
+        assert!(!m.colour().is_empty(), "a picture to show at the stop");
+        assert_eq!(m.run_frames_until(3, &[0x0123]), -1);
+    }
+
+    #[test]
     fn the_steps_move_the_machine_by_their_units() {
         let mut m = Machine::new(&ines()).expect("the plumbing cartridge loads");
         m.run_frames(1);
@@ -580,6 +610,14 @@ mod bridge {
 
         pub fn run_frames(&mut self, n: u32) {
             self.m.run_frames(n as usize);
+        }
+
+        pub fn run_frames_until(&mut self, n: u32, at: &[u16]) -> i32 {
+            self.m.run_frames_until(n as usize, at)
+        }
+
+        pub fn frames_done(&self) -> f64 {
+            self.m.frames_done() as f64
         }
 
         pub fn colour(&self) -> Vec<u8> {

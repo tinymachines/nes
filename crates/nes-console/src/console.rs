@@ -443,6 +443,34 @@ impl Console {
         }
     }
 
+    /// Breakpoints: run until `n` more pictures complete, or until the CPU
+    /// begins fetching an opcode at one of `at` (SYNC rising with that
+    /// address on the bus), and say which. The console stops inside that
+    /// fetch, the instruction about to run. A fetch already under way when
+    /// this is called does not count, so running on from a stop goes past
+    /// the instruction it stopped at. With no addresses this is
+    /// `run_frames`: the check costs nothing when nothing is set.
+    pub fn run_frames_until(&mut self, n: usize, at: &[u16]) -> Option<u16> {
+        if at.is_empty() {
+            self.run_frames(n);
+            return None;
+        }
+        let target = self.frames.len() + n;
+        let mut was = self.cpu.pins().sync;
+        // MUTATE_BREAK=1 lets the fetch under way count, so a run from a
+        // stop never leaves it, and tests/breakpoints.rs must go red.
+        let mutate = std::env::var_os("MUTATE_BREAK").is_some();
+        while self.frames.len() < target {
+            self.master_half_step();
+            let p = self.cpu.pins();
+            if p.sync && (mutate || !was) && at.contains(&p.ab) {
+                return Some(p.ab);
+            }
+            was = p.sync;
+        }
+        None
+    }
+
     // ------------------------------------------------------------------
     // Steps, for a debugger: the machine moved by one of its own units.
     // Every one is `master_half_step` some number of times, so what a
