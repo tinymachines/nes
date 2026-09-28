@@ -102,8 +102,8 @@ pub struct Board {
     /// the PPU's timed \$2002 read.
     pub half_steps_into_dot: u8,
     /// OUT0 as last written, so the strobe's edges are seen here.
-    out0: bool,
-    strobe_rose_at: Option<Position>,
+    pub(crate) out0: bool,
+    pub(crate) strobe_rose_at: Option<Position>,
     /// Where in the PPU's frame every latch fell: (the strobe's rise,
     /// its fall), indexed by latch (the bench's poll index). The frame a
     /// triggered capture hands back depends on where the poll sits

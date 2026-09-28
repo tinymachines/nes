@@ -13,6 +13,39 @@ use nes_glue::controller::Buttons;
 pub struct Machine {
     console: Console,
     battery: bool,
+    /// The image it was powered on from: a saved state loads into a
+    /// console powered on from it again, and names it by digest.
+    rom: Vec<u8>,
+}
+
+/// FNV-1a over a ROM image: what a saved state names its cartridge by,
+/// so a state is refused on any other image.
+fn rom_digest(rom: &[u8]) -> u64 {
+    rom.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &b| (h ^ b as u64).wrapping_mul(0x0100_0000_01b3))
+}
+
+/// A saved state as the page keeps it: the ROM's digest, then the
+/// console's own bytes (`nes_console::state`).
+fn state_with_rom(rom: &[u8], console: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(8 + console.len());
+    out.extend_from_slice(&rom_digest(rom).to_le_bytes());
+    out.extend_from_slice(console);
+    out
+}
+
+/// A console powered on from `rom` and loaded from `state`, which must
+/// name that ROM; with the sound stage the page plays through, or
+/// without it, as a replay runs.
+fn console_at(rom: &[u8], state: &[u8], sound: bool) -> Result<Console, String> {
+    if state.len() < 8 || u64::from_le_bytes(state[..8].try_into().unwrap()) != rom_digest(rom) {
+        return Err("this saved state was made on another cartridge image".into());
+    }
+    let (mut console, _) = power_on(rom)?;
+    if sound {
+        console.sound = Some(Sound::default());
+    }
+    console.load_state(&state[8..])?;
+    Ok(console)
 }
 
 /// The console a ROM powers on into, and whether its header says a
@@ -29,7 +62,7 @@ impl Machine {
     pub fn new(rom: &[u8]) -> Result<Machine, String> {
         let (mut console, battery) = power_on(rom)?;
         console.sound = Some(Sound::default());
-        Ok(Machine { console, battery })
+        Ok(Machine { console, battery, rom: rom.to_vec() })
     }
 
     /// Whether the header says the cartridge has a battery behind its
@@ -176,6 +209,38 @@ impl Machine {
         self.console.inputs.is_some()
     }
 
+    /// The whole machine as bytes, taken where the CPU's current cycle
+    /// ends (a few master half-steps on at most: the machine runs there).
+    pub fn save_state(&mut self) -> Result<Vec<u8>, String> {
+        self.console.run_to_cycle_end();
+        Ok(state_with_rom(&self.rom, &self.console.save_state()?))
+    }
+
+    /// The machine as `state` left it. Refused, and the machine left as
+    /// it was, for another cartridge's state, a state this build cannot
+    /// read, or while a recording runs (a recording is one run from where
+    /// it started).
+    pub fn load_state(&mut self, state: &[u8]) -> Result<(), String> {
+        if self.console.inputs.is_some() {
+            return Err("stop the recording before loading a saved state".into());
+        }
+        self.console = console_at(&self.rom, state, true)?;
+        Ok(())
+    }
+
+    /// Start logging from here rather than from power-on: the machine
+    /// runs to the end of the CPU's cycle, and the state it stands in
+    /// there is what a replay starts from, returned for the page to keep
+    /// with the log.
+    pub fn record_start_here(&mut self) -> Result<Vec<u8>, String> {
+        if self.console.inputs.is_some() {
+            return Err("a recording is already running".into());
+        }
+        let state = self.save_state()?;
+        self.console.inputs = Some(Default::default());
+        Ok(state)
+    }
+
     /// Stop logging: the log, ended here. Empty if nothing was recording.
     pub fn record_stop(&mut self) -> Vec<u8> {
         let m = self.console.master;
@@ -299,6 +364,15 @@ impl Replayer {
         Ok(Replayer { console, replay })
     }
 
+    /// A replay of a recording that started from a saved state
+    /// (`Machine::record_start_here`) rather than from power-on.
+    pub fn from_state(rom: &[u8], state: &[u8], log: &[u8]) -> Result<Replayer, String> {
+        let replay = Replay::new(log)?;
+        let mut console = console_at(rom, state, false)?;
+        console.trace = Some(Default::default());
+        Ok(Replayer { console, replay })
+    }
+
     /// Play `pictures` more (or to the log's end); true when it ended.
     pub fn run(&mut self, pictures: u32) -> Result<bool, String> {
         let played = self.replay.run(&mut self.console, pictures as u64)?;
@@ -412,6 +486,57 @@ mod tests {
         assert_eq!(r.frames(), 17);
         while !r.run(5).expect("each picture matches") {}
         assert_eq!(r.frames_checked(), 17);
+    }
+
+    #[test]
+    fn a_recording_started_mid_game_replays_from_its_state() {
+        let mut m = Machine::new(&ines()).unwrap();
+        m.set_pad(0x80);
+        m.run_frames(7);
+        m.step_half_cycles(5);
+        let state = m.record_start_here().expect("a recording starts anywhere");
+        assert!(m.record_start_here().is_err(), "one at a time");
+        for pad in [0u8, 8, 0x81] {
+            m.set_pad(pad);
+            m.run_frames(4);
+        }
+        m.reset();
+        m.run_frames(2);
+        let log = m.record_stop();
+        let mut r = super::Replayer::from_state(&ines(), &state, &log).expect("the state and log replay");
+        assert_eq!(r.frames(), 3 * 4 + 1 + 2, "every picture after the start, the reset's hold included");
+        let mut trace = 0;
+        while !r.run(5).expect("each picture matches") {
+            trace += r.take_trace().len();
+        }
+        assert_eq!(r.frames_checked(), r.frames());
+        assert!(trace > 0);
+    }
+
+    #[test]
+    fn a_saved_state_loads_into_the_same_game_and_is_refused_by_another() {
+        let mut a = Machine::new(&ines()).unwrap();
+        a.set_pad(0x81);
+        a.run_frames(3);
+        a.step_half_cycles(7);
+        let state = a.save_state().unwrap();
+        let mut b = Machine::new(&ines()).unwrap();
+        b.load_state(&state).expect("the same cartridge");
+        for _ in 0..5 {
+            a.run_frames(1);
+            b.run_frames(1);
+            assert_eq!(a.colour(), b.colour());
+            assert_eq!(a.sound(), b.sound());
+        }
+        let mut other = ines();
+        other[0x10 + 0x100] ^= 0xff;
+        let mut c = Machine::new(&other).unwrap();
+        let before = c.cpu_half_cycles();
+        assert!(c.load_state(&state).unwrap_err().contains("another cartridge"));
+        assert_eq!(c.cpu_half_cycles(), before, "a refused load leaves the machine as it was");
+        let mut garbled = state.clone();
+        garbled[8] ^= 1;
+        assert!(b.load_state(&garbled).is_err());
     }
 
     #[test]
@@ -557,6 +682,18 @@ mod bridge {
             self.m.record_stop()
         }
 
+        pub fn save_state(&mut self) -> Result<Vec<u8>, JsValue> {
+            self.m.save_state().map_err(|e| JsValue::from_str(&e))
+        }
+
+        pub fn load_state(&mut self, state: &[u8]) -> Result<(), JsValue> {
+            self.m.load_state(state).map_err(|e| JsValue::from_str(&e))
+        }
+
+        pub fn record_start_here(&mut self) -> Result<Vec<u8>, JsValue> {
+            self.m.record_start_here().map_err(|e| JsValue::from_str(&e))
+        }
+
         pub fn record_so_far(&self) -> Vec<u8> {
             self.m.record_so_far()
         }
@@ -572,6 +709,11 @@ mod bridge {
         #[wasm_bindgen(constructor)]
         pub fn new(rom: &[u8], battery: &[u8], log: &[u8]) -> Result<NesReplay, JsValue> {
             super::Replayer::new(rom, battery, log).map(|r| NesReplay { r }).map_err(|e| JsValue::from_str(&e))
+        }
+
+        /// A recording that started from a saved state.
+        pub fn from_state(rom: &[u8], state: &[u8], log: &[u8]) -> Result<NesReplay, JsValue> {
+            super::Replayer::from_state(rom, state, log).map(|r| NesReplay { r }).map_err(|e| JsValue::from_str(&e))
         }
 
         pub fn run(&mut self, pictures: u32) -> Result<bool, JsValue> {

@@ -125,7 +125,7 @@ pub struct Console {
     /// The master half-step the cartridge's /IRQ went low at, or None
     /// while it is open. The core is not given it until
     /// `cart_irq_delay` half-steps have passed.
-    cart_irq_low_since: Option<u64>,
+    pub(crate) cart_irq_low_since: Option<u64>,
     /// How far the cartridge's /IRQ is behind the board that drives it,
     /// in master half-steps (twelve to a CPU half-cycle, eight to a PPU
     /// dot). [`CART_IRQ_DELAY`] is where the number comes from; a probe

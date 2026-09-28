@@ -22,8 +22,24 @@ pub const ACCESS_TIME_NS_GRADE_12: u32 = 120;
 pub const POWER_ON_FILL: u8 = 0xa5;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "state", derive(serde::Serialize, serde::Deserialize))]
 pub struct Tmm2115 {
+    #[cfg_attr(feature = "state", serde(with = "bytes_2k"))]
     bytes: Box<[u8; 2048]>,
+}
+
+/// The part's 2 KiB as bytes in a saved state (serde's derive stops at
+/// 32-element arrays); a state with any other length is refused.
+#[cfg(feature = "state")]
+mod bytes_2k {
+    pub fn serialize<S: serde::Serializer>(b: &[u8; 2048], s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_bytes(&b[..])
+    }
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Box<[u8; 2048]>, D::Error> {
+        let v: Vec<u8> = serde::Deserialize::deserialize(d)?;
+        let n = v.len();
+        v.into_boxed_slice().try_into().map_err(|_| serde::de::Error::custom(format!("{n} bytes where the part holds 2048")))
+    }
 }
 
 impl Default for Tmm2115 {

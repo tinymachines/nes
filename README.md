@@ -443,6 +443,19 @@ cargo run --release -p nes-wasm --example record-replay -- rom.nes frames "f:pad
                                   # pad or a moved reset is refused, and
                                   # the registers at each opcode fetch
                                   # hold every LDA #imm before it
+cargo test --release -p nes-console --test state
+                                  # saved states (state.rs): the whole
+                                  # console saved where a CPU cycle ends
+                                  # and loaded into one powered on from the
+                                  # same ROM runs on as the one that never
+                                  # stopped, pins, pictures and sound, the
+                                  # splits landing in stalls and a reset's
+                                  # hold, and in blargg's MMC3 test with its
+                                  # IRQ up; MUTATE_STATE=1 must go red. A
+                                  # recording can start from one
+                                  # (nes-wasm's record_start_here)
+NES_STATE_ROM=rom.nes cargo test --release -p nes-console --test state -- --ignored
+                                  # the same on any cartridge, by hand
 cargo run --release -p nes-console --example trace-cpu -- rom.nes
 cargo run --release -p nes-console --example flat-cpu -- rom.nes <half-cycles>
                                   # the instruments: the CPU's bus through

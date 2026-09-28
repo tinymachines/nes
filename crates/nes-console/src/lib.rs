@@ -26,6 +26,7 @@ pub mod knobs;
 pub mod picture;
 pub mod record;
 pub mod sound;
+pub mod state;
 pub mod testrom;
 
 pub use board::Board;

@@ -71,29 +71,29 @@ pub enum Mixer {
 }
 
 pub struct Sound {
-    mixer: Mixer,
+    pub(crate) mixer: Mixer,
     /// The two DACs tabulated: ad1 by the squares' sum (0..=30), ad2 by
     /// (tri, noise, pcm) at 16 x 16 x 128. The table's formulas, once.
-    ad1_lut: [f32; 31],
-    ad2_lut: Vec<f32>,
-    hp_a: f64,
-    lp_b: f64,
-    hp_x1: f64,
-    hp_y1: f64,
-    lp_y1: f64,
+    pub(crate) ad1_lut: [f32; 31],
+    pub(crate) ad2_lut: Vec<f32>,
+    pub(crate) hp_a: f64,
+    pub(crate) lp_b: f64,
+    pub(crate) hp_x1: f64,
+    pub(crate) hp_y1: f64,
+    pub(crate) lp_y1: f64,
     /// Stage output awaiting resampling, from input index `pending0`;
     /// compacted when the consumed prefix has grown past the window.
-    pending: Vec<f32>,
-    pending0: u64,
+    pub(crate) pending: Vec<f32>,
+    pub(crate) pending0: u64,
     /// Input samples pushed.
     pub samples: u64,
     /// Output samples emitted (48 kHz), and the input index the next
     /// one's window ends at (so a push does no arithmetic until then).
-    next_out: u64,
-    next_needed: u64,
-    gain: f64,
-    kernel: Vec<f32>,
-    half_width: usize,
+    pub(crate) next_out: u64,
+    pub(crate) next_needed: u64,
+    pub(crate) gain: f64,
+    pub(crate) kernel: Vec<f32>,
+    pub(crate) half_width: usize,
     /// The 48 kHz output, in the table's units times the stage gain
     /// (volts once the bench supplies the scale).
     pub out: Vec<f32>,

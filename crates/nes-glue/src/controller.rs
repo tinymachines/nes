@@ -33,6 +33,7 @@
 
 /// The eight buttons in the shift register's order, bit 0 first out.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[cfg_attr(feature = "state", derive(serde::Serialize, serde::Deserialize))]
 pub struct Buttons {
     pub a: bool,
     pub b: bool,
@@ -60,6 +61,7 @@ impl Buttons {
 
 /// A standard controller: the 4021, from the port's side.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[cfg_attr(feature = "state", derive(serde::Serialize, serde::Deserialize))]
 pub struct Controller {
     pub buttons: Buttons,
     /// The register, bit 0 next out; ones shift in from the top.
