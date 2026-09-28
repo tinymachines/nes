@@ -13,10 +13,18 @@ use nes_glue::controller::Buttons;
 pub struct Machine {
     console: Console,
     battery: bool,
+    /// Trace bytes dropped off the front of the history so far: the
+    /// history's end is this plus what it holds, a place that survives
+    /// the trimming (`history_end`, `history_cut`).
+    history_base: u64,
     /// The image it was powered on from: a saved state loads into a
     /// console powered on from it again, and names it by digest.
     rom: Vec<u8>,
 }
+
+/// The history kept: a megabyte of trace, some thirty thousand
+/// instructions; it is trimmed back to this once it holds twice as much.
+const HISTORY_KEEP: usize = 1 << 20;
 
 /// FNV-1a over a ROM image: what a saved state names its cartridge by,
 /// so a state is refused on any other image.
@@ -62,7 +70,7 @@ impl Machine {
     pub fn new(rom: &[u8]) -> Result<Machine, String> {
         let (mut console, battery) = power_on(rom)?;
         console.sound = Some(Sound::default());
-        Ok(Machine { console, battery, rom: rom.to_vec() })
+        Ok(Machine { console, battery, history_base: 0, rom: rom.to_vec() })
     }
 
     /// Whether the header says the cartridge has a battery behind its
@@ -87,6 +95,7 @@ impl Machine {
     pub fn run_frames(&mut self, n: usize) {
         self.console.frames.clear();
         self.console.run_frames(n);
+        self.trim_history();
         if self.console.frames.len() > 1 {
             let last = self.console.frames.pop().unwrap();
             self.console.frames.clear();
@@ -160,7 +169,63 @@ impl Machine {
     // newest completed frame where `colour` finds it, as run_frames does.
     // ------------------------------------------------------------------
 
+    // ------------------------------------------------------------------
+    // History, for a debugger: the console's own trace (`record`'s 8-byte
+    // records: every CPU cycle's bus, the registers at each instruction)
+    // while it is on, the newest HISTORY_KEEP bytes of it kept. The page
+    // reads the tail to show the instructions just run, and cuts it back
+    // to where it was when it steps back to a saved moment.
+    // ------------------------------------------------------------------
+
+    /// Tracing costs time, so the history is off until asked for.
+    pub fn set_history(&mut self, on: bool) {
+        if on && self.console.trace.is_none() {
+            self.console.trace = Some(Default::default());
+            self.history_base = 0;
+        } else if !on {
+            self.console.trace = None;
+            self.history_base = 0;
+        }
+    }
+
+    /// The newest `max` bytes of the history (a whole number of records).
+    pub fn history(&self, max: usize) -> Vec<u8> {
+        let Some(t) = self.console.trace.as_ref() else { return Vec::new() };
+        let n = max.min(t.bytes.len()) & !7;
+        t.bytes[t.bytes.len() - n..].to_vec()
+    }
+
+    /// Where the history ends: every byte it has ever held, counted.
+    pub fn history_end(&self) -> u64 {
+        self.history_base + self.console.trace.as_ref().map_or(0, |t| t.bytes.len() as u64)
+    }
+
+    /// Back to where the history ended at `end` (`history_end` then): what
+    /// was traced after it did not happen once the machine is put back.
+    pub fn history_cut(&mut self, end: u64) {
+        let base = self.history_base;
+        if let Some(t) = self.console.trace.as_mut() {
+            if end <= base {
+                t.bytes.clear();
+                self.history_base = end;
+            } else if ((end - base) as usize) < t.bytes.len() {
+                t.bytes.truncate((end - base) as usize);
+            }
+        }
+    }
+
+    fn trim_history(&mut self) {
+        if let Some(t) = self.console.trace.as_mut() {
+            if t.bytes.len() > 2 * HISTORY_KEEP {
+                let cut = (t.bytes.len() - HISTORY_KEEP) & !7;
+                t.bytes.drain(..cut);
+                self.history_base += cut as u64;
+            }
+        }
+    }
+
     fn keep_newest_frame(&mut self) {
+        self.trim_history();
         if self.console.frames.len() > 1 {
             let last = self.console.frames.pop().unwrap();
             self.console.frames.clear();
@@ -240,7 +305,11 @@ impl Machine {
         if self.console.inputs.is_some() {
             return Err("stop the recording before loading a saved state".into());
         }
-        self.console = console_at(&self.rom, state, true)?;
+        let mut console = console_at(&self.rom, state, true)?;
+        // The history is the page's instrument, not the machine's state:
+        // it stays, and the page cuts it back to the moment (`history_cut`).
+        console.trace = self.console.trace.take();
+        self.console = console;
         Ok(())
     }
 
@@ -570,6 +639,41 @@ mod tests {
     }
 
     #[test]
+    fn the_history_holds_the_instructions_just_run_and_cuts_back_to_a_moment() {
+        let mut m = Machine::new(&ines()).unwrap();
+        assert!(m.history(1 << 16).is_empty(), "off until asked for");
+        m.set_history(true);
+        m.run_frames(1);
+        let end = m.history_end();
+        let state = m.save_state().unwrap();
+        let at_save = m.history_end();
+        assert!(at_save >= end);
+        for _ in 0..20 {
+            m.step_instruction();
+        }
+        // The last register record follows the fetch of the instruction
+        // the machine last began: its address is the fetch cycle's.
+        let h = m.history(4096);
+        assert_eq!(h.len() % 8, 0);
+        let recs: Vec<&[u8]> = h.chunks(8).collect();
+        let regs = recs.iter().rposition(|r| r[3] >> 6 == 1).expect("a register record");
+        let fetch = recs[..regs].iter().rposition(|r| r[3] >> 6 == 0 && r[3] & 2 != 0).expect("its fetch");
+        let pc = u16::from_le_bytes([recs[fetch][0], recs[fetch][1]]);
+        assert_eq!(pc, m.console.last_fetch().0);
+        // Back to the moment: the history ends where it ended then.
+        m.load_state(&state).unwrap();
+        m.history_cut(at_save);
+        assert_eq!(m.history_end(), at_save);
+        // A long run is trimmed, and the end still counts every byte.
+        let before = m.history_end();
+        m.run_frames(12);
+        assert!(m.history(usize::MAX).len() <= 2 * super::HISTORY_KEEP);
+        assert!(m.history_end() > before + super::HISTORY_KEEP as u64);
+        m.set_history(false);
+        assert!(m.history(4096).is_empty());
+    }
+
+    #[test]
     fn the_steps_move_the_machine_by_their_units() {
         let mut m = Machine::new(&ines()).expect("the plumbing cartridge loads");
         m.run_frames(1);
@@ -618,6 +722,22 @@ mod bridge {
 
         pub fn frames_done(&self) -> f64 {
             self.m.frames_done() as f64
+        }
+
+        pub fn set_history(&mut self, on: bool) {
+            self.m.set_history(on)
+        }
+
+        pub fn history(&self, max: u32) -> Vec<u8> {
+            self.m.history(max as usize)
+        }
+
+        pub fn history_end(&self) -> f64 {
+            self.m.history_end() as f64
+        }
+
+        pub fn history_cut(&mut self, end: f64) {
+            self.m.history_cut(end as u64)
         }
 
         pub fn colour(&self) -> Vec<u8> {
