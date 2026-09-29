@@ -43,10 +43,11 @@ turns rendering on and then writes nothing more, and holds that the
 latch moved and no register did. It checks its own program first: a
 nametable it never filled would draw tile $00 and move nothing.
 
-**Nineteen of the twenty play.** The one that does not is Super Mario
-Bros., whose only dump is one the reader's own CRC32 could not match:
-that cartridge wants reading again before its blank screen means
-anything. Nothing here has been played past its title screen with a
+**Nineteen of the twenty draw, and the twentieth is not a game.** Dump
+54, listed as Super Mario Bros., is the first bank of the Super Mario
+Bros. and Duck Hunt multicart read alone; its reset is the board's own
+bank switch, so as a plain NROM image it loops there forever
+(`docs/boards-report.md`). Nothing here has been played past its title screen with a
 controller, so "plays" is "draws its own picture from its own program",
 which is what the console can say on its own.
 

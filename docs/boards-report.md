@@ -116,12 +116,25 @@ counted when the background sits at $1000, which made a frame 242
 clocks on alternate frames where the part makes 241. It counts ten dots
 now (nes-bus v0.1.6).
 
-## Nineteen of the twenty draw their own picture
+## The twentieth dump is the multicart's first bank, read alone
 
-One does not, and it is not the board's fault. Super Mario Bros.'s only
-dump is one the reader's own checksum could not match against the
-database, so that cartridge wants reading again before its blank screen
-means anything.
+The one that does not draw is not a game's dump at all. Dump 54,
+listed as Super Mario Bros., is byte for byte the first 32 KiB bank of
+program and the first 8 KiB bank of characters of the Super Mario Bros.
+and Duck Hunt multicart (dump 55): the reader identified the board as
+plain Super Mario Bros. from its 512-byte window and read it with that
+game's sizes, so it read one bank of two. That bank is the game, with
+one change the board made. Its first nine bytes, where the game's reset
+began, are the multicart's own bank switch (`SEI`, a write to the
+board's register selecting the menu's bank, a jump back to itself), and
+the game's real entry is nine bytes on, where the menu jumps to. As a
+plain NROM image the switch has nothing to switch, so the program loops
+on those four instructions forever and the screen stays black: four
+opcode addresses over 300 frames and no write to the rendering register
+(`examples/where-it-sits`, 2026-09-29). The reader's checksum matched
+nothing because no retail cartridge has this bank on its own. Nothing
+needs dumping again, and the twenty are accounted for: nineteen dumps
+that draw, and one bank that lives inside another.
 
 "Draws its own picture" is the whole claim. Nothing here has been
 played past its title screen with a controller in somebody's hands, so
@@ -165,8 +178,8 @@ back to the instruction it stopped on.
   the processor samples the interrupt rather than anything the
   cartridge does. A scope on pin 15 against the processor's clock would
   turn the middle of a band into a number.
-- **Super Mario Bros. wants dumping again**, and until it is, one of
-  the twenty is unaccounted for.
+- **Dump 54 is not a cartridge to read again.** It is the multicart's
+  first bank alone (above), and the twenty are accounted for.
 - **No game has been played**, in the ordinary sense of the word.
 
 ## Where these figures come from
