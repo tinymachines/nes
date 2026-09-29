@@ -19,7 +19,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use nes_bus::cart::{Cartridge, Cnrom, Mirroring, Mmc1, Mmc2, Uxrom};
+use nes_bus::cart::{CartState, Cartridge, Cnrom, Mirroring, Mmc1, Mmc2, Uxrom};
 use nes_console::{ines, Alignment, Console};
 
 /// A board the test keeps a handle on while the console holds it. It
@@ -53,6 +53,12 @@ impl<T: Cartridge> Cartridge for Shared<T> {
     }
     fn owns_chr_ram(&self) -> bool {
         self.0.borrow().owns_chr_ram()
+    }
+    fn save_state(&self) -> Option<CartState> {
+        self.0.borrow().save_state()
+    }
+    fn load_state(&mut self, st: &CartState) -> Result<(), String> {
+        self.0.borrow_mut().load_state(st)
     }
 }
 
@@ -270,4 +276,66 @@ fn mmc2s_latch_is_flipped_by_the_ppu_and_not_by_the_program() {
     }
     assert_eq!(board.borrow().latches()[0], 0xfe, "the PPU drew tile $FE and the latch followed it");
     assert_eq!(board.borrow().banks(), (0, [0, 2], [1, 3]), "and no register moved");
+}
+
+/// The pattern memory a debugger reads is the bank on the bus, not the
+/// file's first: CNROM with four 8 KiB banks, each filled with its own
+/// number, reads as bank 0 at power-on and as bank 2 once a program has
+/// selected it.
+#[test]
+fn the_pattern_memory_reads_through_cnrom_s_bank_as_it_stands() {
+    let code: &[u8] = &[
+        0xa9, 0x02, // LDA #$02
+        0x8d, 0x00, 0x80, // STA $8000
+        0x4c, 0x05, 0xc1, // JMP here
+    ];
+    let mut prg = vec![0xffu8; 0x8000];
+    prg[0x4100..0x4100 + code.len()].copy_from_slice(code);
+    prg[0x7ffc..0x7ffe].copy_from_slice(&[0x00, 0xc1]);
+    let mut chr = vec![0u8; 4 * 0x2000];
+    for (i, b) in chr.chunks_mut(0x2000).enumerate() {
+        b.fill(0x11 * (i as u8 + 1));
+    }
+    let board = Rc::new(RefCell::new(Cnrom::new(prg, chr, Mirroring::Vertical).expect("CNROM")));
+    let mut c = Console::new(Box::new(Shared(board.clone())), None, Alignment::default());
+    let before = c.chr().expect("a CNROM board saves its state, so its CHR can be read");
+    assert_eq!(before.len(), 0x2000);
+    assert!(before.iter().all(|&b| b == 0x11), "at power-on the chip sees bank 0");
+    c.run_frames(2);
+    assert_eq!(board.borrow().bank(), 2, "the program selected bank 2");
+    let after = c.chr().expect("read again");
+    assert!(after.iter().all(|&b| b == 0x33), "and the chip sees bank 2, not the file's first");
+}
+
+/// Reading the pattern memory moves nothing on the one board whose read
+/// has a side effect: MMC2's latches trip on a fetch of their trigger
+/// tiles, which a sweep of all 8 KiB fetches. With latch 0 standing on
+/// $FE, every byte of the lower half comes from the $FE bank, the bytes
+/// after the $0FD8 trigger included, and both latches stand where they
+/// were afterwards.
+#[test]
+fn reading_the_pattern_memory_leaves_mmc2_s_latches_where_they_stood() {
+    let mut prg = vec![0u8; 8 * 0x2000];
+    let n = prg.len();
+    prg[n - 4..n - 2].copy_from_slice(&[0x00, 0xe1]);
+    let mut chr = vec![0u8; 4 * 0x1000];
+    for (i, b) in chr.chunks_mut(0x1000).enumerate() {
+        b.fill(0x11 * (i as u8 + 1));
+    }
+    let board = Rc::new(RefCell::new(Mmc2::new(prg, chr, Mirroring::Vertical).expect("MMC2")));
+    {
+        let mut b = board.borrow_mut();
+        b.cpu_write(0xb000, 0); // $0000 on $FD: bank 0, $11
+        b.cpu_write(0xc000, 1); // $0000 on $FE: bank 1, $22
+        b.cpu_write(0xd000, 2); // $1000 on $FD: bank 2, $33
+        b.cpu_write(0xe000, 3); // $1000 on $FE: bank 3, $44
+        // A fetch of tile $FE's trigger, as the PPU would make it.
+        b.chr_read(0x0fe8);
+    }
+    assert_eq!(board.borrow().latches(), [0xfe, 0xfd], "latch 0 on $FE, latch 1 at power-on");
+    let c = Console::new(Box::new(Shared(board.clone())), None, Alignment::default());
+    let seen = c.chr().expect("an MMC2 board saves its state, so its CHR can be read");
+    assert!(seen[..0x1000].iter().all(|&b| b == 0x22), "the lower half is the $FE bank throughout, the bytes after the $0FD8 trigger included");
+    assert!(seen[0x1000..].iter().all(|&b| b == 0x33), "the upper half is the $FD bank throughout");
+    assert_eq!(board.borrow().latches(), [0xfe, 0xfd], "and the sweep left both latches where they stood");
 }

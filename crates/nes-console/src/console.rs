@@ -297,6 +297,40 @@ impl Console {
         self.board.borrow().cart.borrow().chr_ram.clone()
     }
 
+    /// The pattern memory as the picture chip sees it at this instant, 8
+    /// KiB: the console's own CHR-RAM where it keeps one, otherwise the
+    /// cartridge's CHR through the board's banks as they stand. None for
+    /// a board that cannot save its state, because the read below leans
+    /// on putting it back.
+    ///
+    /// Read from the board directly and not over the PPU bus, so a board
+    /// that counts the address line (`ppu_bus`) never sees the sweep.
+    /// A board's own read can still have a side effect of its own: the
+    /// MMC2 latch moves on a fetch of its trigger tiles, and a sweep that
+    /// let it move would read every byte after the trigger from the bank
+    /// the trigger chose. So the board's state is saved once and put back
+    /// after EVERY read, which reads each byte with the banks exactly as
+    /// they stood, and leaves the board as it was. That is one state load
+    /// a byte, a clone of the board's registers (and its CHR-RAM, on a
+    /// board that keeps one): a few milliseconds, asked for by a window
+    /// that is usually closed.
+    pub fn chr(&self) -> Option<Vec<u8>> {
+        let b = self.board.borrow();
+        let mut c = b.cart.borrow_mut();
+        if let Some(ram) = &c.chr_ram {
+            return Some(ram.clone());
+        }
+        let saved = c.cart.save_state()?;
+        let mut out = Vec::with_capacity(0x2000);
+        for a in 0..0x2000u16 {
+            out.push(c.cart.chr_read(a).unwrap_or(0));
+            if c.cart.load_state(&saved).is_err() {
+                return None;
+            }
+        }
+        Some(out)
+    }
+
     /// One master half-step: the PPU dot and the CPU half-cycle that
     /// fall on it, PPU first (its /INT and the APU's IRQ are what the
     /// CPU samples as its half-cycle begins).

@@ -425,6 +425,13 @@ impl Machine {
     pub fn chr_ram(&self) -> Vec<u8> {
         self.console.chr_ram().unwrap_or_default()
     }
+
+    /// The pattern memory as the picture chip sees it now, 8 KiB through
+    /// the board's banks as they stand (`Console::chr`); empty for a
+    /// board that cannot say.
+    pub fn chr(&self) -> Vec<u8> {
+        self.console.chr().unwrap_or_default()
+    }
 }
 
 /// A recording played back into a console that has just powered on, with
@@ -826,6 +833,10 @@ mod bridge {
 
         pub fn chr_ram(&self) -> Vec<u8> {
             self.m.chr_ram()
+        }
+
+        pub fn chr(&self) -> Vec<u8> {
+            self.m.chr()
         }
 
         pub fn record_start(&mut self) -> Result<(), JsValue> {
