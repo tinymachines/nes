@@ -4,10 +4,14 @@
 //! fetched opcodes from; a step that reached code no step had reached
 //! before keeps its end as a new moment, and the moments that found the
 //! most are tried first. Behind them come the steps that wrote a value
-//! into RAM the game had never written (a position, a timer, a state),
-//! since a level has to be walked through before its next routine runs,
-//! deeper chains first so a walk keeps walking; a step that did neither,
-//! or ended in a console already seen, is dropped. Bounded by a step budget and a frontier cap, so it ends. The
+//! into RAM the game had never written (a position, a state); a level
+//! has to be walked through before its next routine runs, so deeper
+//! chains go first among equals; a step that did neither, or ended in a
+//! console already seen, is dropped. WEIGHT=1 makes each new value worth
+//! less the more values its address has shown, so a counter or a
+//! temporary says nothing by ticking; tried on the multicart over 1600
+//! steps it reached 5306 opcode sites against 5462 for the plain count,
+//! so the plain count stays the default and the rule stays as a switch. Bounded by a step budget and a frontier cap, so it ends. The
 //! actions from one moment run on THREADS threads (all the cores).
 //!
 //!   cargo run --release -p nes-console --example crawl -- ROM.nes OUTDIR [STEPS] [START]
@@ -15,7 +19,9 @@
 //! START is a script of `AT <frame> <hh>` lines played first (the way
 //! into a game: past its menu and title); the crawl begins where it
 //! ends; its `# frames N` line, if any, says where. HOLD=n frames a step
-//! holds its pad (20), FRONTIER=n moments kept (1000). OUTDIR gets:
+//! holds its pad (20), FRONTIER=n moments kept (1000), WEIGHT=1 the
+//! weighted novelty, NOVELTY=1 a report of which RAM addresses took the
+//! most values. OUTDIR gets:
 //!
 //!   crawl.json      the coverage, in the flow report's shape: prg_len,
 //!                   frames, instructions, sites (key, addr, count) and
@@ -106,6 +112,7 @@ struct Moment {
     frames: u32,
     digest: Option<u32>,
     gain: usize,
+    /// The RAM novelty score, in thousandths.
     novelty: usize,
     depth: u32,
     id: u32,
@@ -139,22 +146,37 @@ struct Coverage {
     covered: usize,
     /// (RAM address, value) pairs ever written: 2048 x 256 bits.
     ram: Vec<u64>,
+    /// Distinct values seen per RAM address: where the novelty came from.
+    distinct: Vec<u32>,
+    /// WEIGHT=1: a new value is worth one over its address's distinct count.
+    weighted: bool,
 }
 
 impl Coverage {
-    /// A step's RAM writes folded in: how many (address, value) pairs
-    /// were new. Progress through a game shows here before it shows as
-    /// code: a position, a timer, a state the game had not been in.
+    /// A step's RAM writes folded in, as a novelty score in thousandths.
+    /// Progress through a game shows in RAM before it shows as code: a
+    /// position, a state the game had not been in. But a byte that
+    /// takes a new value every step (a frame counter, a random byte, a
+    /// temporary, a sprite's coordinate) says nothing by doing so, so a
+    /// new value at an address is worth one over the number of distinct
+    /// values that address has shown: the first is worth 1, the
+    /// hundredth 0.01. Measured on the multicart before this rule: four
+    /// addresses ran through all 256 values and fifty-one through 64 or
+    /// more, and those fifty-five carried half of all the new pairs. Yet
+    /// the plain count found more code in the same 1600 steps (5462
+    /// sites against 5306), so the weighting is WEIGHT=1, off by default.
     fn fold_writes(&mut self, writes: &[u32]) -> usize {
-        let mut new = 0;
+        let mut score = 0.0f64;
         for &w in writes {
             let (i, b) = ((w >> 6) as usize, w & 63);
             if self.ram[i] & (1 << b) == 0 {
                 self.ram[i] |= 1 << b;
-                new += 1;
+                let a = (w >> 8) as usize;
+                self.distinct[a] += 1;
+                score += if self.weighted { 1.0 / self.distinct[a] as f64 } else { 1.0 };
             }
         }
-        new
+        (score * 1000.0).round() as usize
     }
 
     /// A step's sites folded in. Returns how many offsets were fetched
@@ -211,7 +233,7 @@ fn main() {
     let hold: usize = std::env::var("HOLD").ok().map(|s| s.parse().expect("HOLD")).unwrap_or(20);
     let cap: usize = std::env::var("FRONTIER").ok().map(|s| s.parse().expect("FRONTIER")).unwrap_or(1000);
     let prg_len = ines::parse(&rom).unwrap().prg.len();
-    let mut cov = Coverage { count: vec![0; prg_len], addr: vec![0; prg_len], instructions: 0, frames: 0, covered: 0, ram: vec![0; 2048 * 256 / 64] };
+    let mut cov = Coverage { count: vec![0; prg_len], addr: vec![0; prg_len], instructions: 0, frames: 0, covered: 0, ram: vec![0; 2048 * 256 / 64], distinct: vec![0; 2048], weighted: std::env::var("WEIGHT").is_ok() };
 
     // The way in.
     let mut c = power_on(&rom);
@@ -327,6 +349,22 @@ fn main() {
         writeln!(f, "# frames {frames}").unwrap();
         for (fr, p) in script {
             writeln!(f, "AT {fr} {p:02X}").unwrap();
+        }
+    }
+    if std::env::var("NOVELTY").is_ok() {
+        let mut top: Vec<(usize, u32)> = cov.distinct.iter().copied().enumerate().filter(|x| x.1 > 0).collect();
+        top.sort_by(|a, b| b.1.cmp(&a.1));
+        let total: u32 = top.iter().map(|x| x.1).sum();
+        eprintln!("novelty: {} distinct (address, value) pairs over {} addresses; the top 32 addresses:", total, top.len());
+        for (a, n) in top.iter().take(32) {
+            eprintln!("  ${a:04X} {n:>4} values");
+        }
+        let hist = [(256, "256 (a counter or a random byte)"), (64, "64 to 255"), (16, "16 to 63"), (4, "4 to 15"), (1, "1 to 3")];
+        for (min, label) in hist {
+            let max = if min == 256 { 256 } else { hist.iter().map(|x| x.0).filter(|&m| m > min).min().unwrap_or(257) - 1 };
+            let addrs = top.iter().filter(|x| x.1 as usize >= min && x.1 as usize <= max).count();
+            let pairs: u32 = top.iter().filter(|x| x.1 as usize >= min && x.1 as usize <= max).map(|x| x.1).sum();
+            eprintln!("  {label}: {addrs} addresses, {pairs} pairs");
         }
     }
     eprintln!("done: {step} steps, {} of {prg_len} opcode sites of PRG reached ({:.1}%), {kept} moments found new code, {:.0} s", cov.covered, cov.covered as f64 * 100.0 / prg_len as f64, t0.elapsed().as_secs_f64());
