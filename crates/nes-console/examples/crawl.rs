@@ -15,6 +15,11 @@
 //! Bounded by a step budget and a frontier cap, so it ends. BATCH
 //! moments (4) are taken at a time and all their actions run together
 //! on THREADS threads (all the cores); BATCH=1 is one moment at a time.
+//! PICTURE=1 also keeps a step that ended on a picture not seen before,
+//! so the frontier does not run dry; tried on two games that had run dry
+//! before 6400 steps, it reached 14002 opcode sites against 13839 and
+//! 4511 against 4327, a hundred or two for the rest of the budget, so it
+//! too stays a switch.
 //!
 //!   cargo run --release -p nes-console --example crawl -- ROM.nes OUTDIR [STEPS] [START]
 //!
@@ -285,6 +290,8 @@ fn main() {
     let mut frontier = BinaryHeap::new();
     frontier.push(root);
     let mut seen: HashSet<u64> = HashSet::new();
+    let pictures = std::env::var_os("PICTURE").is_some();
+    let mut shown_pictures: HashSet<u32> = HashSet::new();
     let mut next_id = 1u32;
     let mut kept = 0usize;
     let mut best: Option<(u32, Vec<(u32, u8)>)> = None;
@@ -334,7 +341,13 @@ fn main() {
                 r.state.hash(&mut s);
                 s.finish()
             };
-            if !seen.insert(h) || (new == 0 && novelty == 0) {
+            // PICTURE=1: a step that ended on a picture no step had ended
+            // on is kept too, behind everything that found code or wrote
+            // a new value (its gain and novelty are nothing), so the
+            // frontier does not run dry while the game can still be
+            // walked somewhere it has not been seen.
+            let fresh = pictures && r.digest.is_some_and(|d| shown_pictures.insert(d));
+            if !seen.insert(h) || (new == 0 && novelty == 0 && !fresh) {
                 continue; // the same console again, or nothing the game had not done
             }
             let mut script = m.script.clone();
