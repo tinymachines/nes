@@ -11,8 +11,10 @@
 //! less the more values its address has shown, so a counter or a
 //! temporary says nothing by ticking; tried on the multicart over 1600
 //! steps it reached 5306 opcode sites against 5462 for the plain count,
-//! so the plain count stays the default and the rule stays as a switch. Bounded by a step budget and a frontier cap, so it ends. The
-//! actions from one moment run on THREADS threads (all the cores).
+//! so the plain count stays the default and the rule stays as a switch.
+//! Bounded by a step budget and a frontier cap, so it ends. BATCH
+//! moments (4) are taken at a time and all their actions run together
+//! on THREADS threads (all the cores); BATCH=1 is one moment at a time.
 //!
 //!   cargo run --release -p nes-console --example crawl -- ROM.nes OUTDIR [STEPS] [START]
 //!
@@ -288,25 +290,40 @@ fn main() {
     let mut best: Option<(u32, Vec<(u32, u8)>)> = None;
     let t0 = std::time::Instant::now();
     let mut step = 0usize;
+    let mut shown = 0usize;
     let threads: usize = std::env::var("THREADS").ok().map(|s| s.parse().expect("THREADS")).unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2));
+    // BATCH moments are taken off the frontier at a time and all their
+    // actions run across the threads together: one moment's actions are
+    // sixteen, the longest six times the others, so a moment at a time
+    // leaves most of the cores waiting on its one long wait. The batch
+    // is a number of its own, not the thread count, so a crawl is the
+    // same crawl on any machine.
+    let batch: usize = std::env::var("BATCH").ok().map(|s| s.parse().expect("BATCH")).unwrap_or(4).max(1);
     while step < steps {
-        let Some(m) = frontier.pop() else { break };
-        // Every action from this moment, across the threads.
+        let moments: Vec<Moment> = (0..batch).map_while(|_| frontier.pop()).collect();
+        if moments.is_empty() {
+            break;
+        }
         let mut actions: Vec<(u8, usize)> = ACTIONS.iter().map(|&p| (p, hold)).collect();
         actions.push((0x00, WAIT_FRAMES));
-        let results: Vec<Step> = std::thread::scope(|sc| {
-            let chunks: Vec<Vec<(u8, usize)>> = (0..threads).map(|t| actions.iter().copied().skip(t).step_by(threads).collect()).collect();
-            let handles: Vec<_> = chunks
-                .into_iter()
-                .map(|ch| {
-                    let rom = &rom;
-                    let state = &m.state;
-                    sc.spawn(move || ch.into_iter().map(|(p, h)| run_step(rom, state, p, h)).collect::<Vec<Step>>())
+        // Every action from every moment of the batch, the long ones
+        // dealt out first so no thread gets two while another has none.
+        let mut tasks: Vec<(usize, usize)> = (0..moments.len()).flat_map(|mi| (0..actions.len()).map(move |ai| (mi, ai))).collect();
+        tasks.sort_by_key(|&(mi, ai)| (std::cmp::Reverse(actions[ai].1), mi, ai));
+        let mut done: Vec<(usize, usize, Step)> = std::thread::scope(|sc| {
+            let handles: Vec<_> = (0..threads)
+                .map(|t| {
+                    let mine: Vec<(usize, usize)> = tasks.iter().copied().skip(t).step_by(threads).collect();
+                    let (rom, moments, actions) = (&rom, &moments, &actions);
+                    sc.spawn(move || mine.into_iter().map(|(mi, ai)| (mi, ai, run_step(rom, &moments[mi].state, actions[ai].0, actions[ai].1))).collect::<Vec<_>>())
                 })
                 .collect();
             handles.into_iter().flat_map(|h| h.join().expect("a step thread")).collect()
         });
-        for r in results {
+        // Folded in the order one moment at a time would have run them.
+        done.sort_by_key(|d| (d.0, d.1));
+        for (mi, _, r) in done {
+            let m = &moments[mi];
             step += 1;
             cov.frames += r.hold as u64;
             let new = cov.fold(&r.sites, r.instructions);
@@ -344,7 +361,8 @@ fn main() {
             v.drain(..v.len() - cap);
             frontier = v.into_iter().collect();
         }
-        if step % 160 < ACTIONS.len() + 1 {
+        if step / 640 != shown {
+            shown = step / 640;
             eprintln!("step {step}: {} of {prg_len} opcode sites of PRG reached ({:.1}%), frontier {}, {} moments found new code, {:.0} s", cov.covered, cov.covered as f64 * 100.0 / prg_len as f64, frontier.len(), kept, t0.elapsed().as_secs_f64());
         }
     }
