@@ -103,6 +103,12 @@ fn run_step(rom: &[u8], state: &[u8], pad: u8, hold: usize) -> Step {
     c.run_to_cycle_end();
     let tr = take(&mut c);
     let (sites, writes, instructions) = sites_of(&tr);
+    // The pictures so far are not the console: a state that carried
+    // every frame since power-on grew by the path's length (tens of
+    // megabytes a moment, and a 1600-step crawl took 52 GB before the
+    // kernel stopped it), and two paths to the same console hashed
+    // apart. `last_frame_digest` is what a step needs of them.
+    c.frames.clear();
     Step { pad, hold, sites, writes, instructions, state: c.save_state().expect("save"), digest: c.last_frame_digest }
 }
 
@@ -272,6 +278,7 @@ fn main() {
         eprintln!("the way in: {end} frames, {} opcode sites of PRG reached", cov.covered);
     }
     c.run_to_cycle_end();
+    c.frames.clear();
     let root = Moment { state: c.save_state().expect("save"), script, frames, digest: c.last_frame_digest, gain: 1, novelty: 1, depth: 0, id: 0 };
     let mut frontier = BinaryHeap::new();
     frontier.push(root);
