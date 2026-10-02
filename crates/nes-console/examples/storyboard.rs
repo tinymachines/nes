@@ -13,6 +13,12 @@
 //! indices through an authored palette, for looking at, as `run-rom`
 //! writes them.
 //!
+//! With VRAM=1 it also writes `vram.txt`: every run of writes the program
+//! made to the picture chip's memory through $2006/$2007, one line each,
+//! `frame address count step`, where step is 1 or 32 as $2000 set it
+//! (the address is where the run started, before the chip's mirroring).
+//! It reads the console's trace, so it is slower.
+//!
 //! A commercial cartridge's memory and pictures are as private as the
 //! cartridge: OUT_DIR is the caller's to keep out of every repository.
 
@@ -54,6 +60,15 @@ fn main() {
     let chr_ram = r.chr_ram.then(|| vec![0u8; 0x2000]);
     let cart = r.cart().unwrap_or_else(|e| panic!("{e:?}"));
     let mut console = Console::with_prg_ram(cart, chr_ram, Alignment::default(), true);
+    let vram_on = std::env::var("VRAM").is_ok_and(|v| v == "1");
+    if vram_on {
+        console.trace = Some(Default::default());
+    }
+    let mut vram = std::io::BufWriter::new(std::fs::File::create(out.join(if vram_on { "vram.txt" } else { ".vram-off" })).expect("vram.txt"));
+    // The program's view of the picture chip's address: the two-write
+    // latch, the address, the step. A run is consecutive $2007 writes.
+    let (mut latch, mut addr, mut step) = (false, 0u16, 1u16);
+    let mut run: Option<(u16, u16, u16)> = None;
     let mut ram = std::io::BufWriter::new(std::fs::File::create(out.join("ram.bin")).expect("ram.bin"));
     let mut pads = Vec::with_capacity(frames);
     let (mut next, mut pad, mut written) = (0, 0u8, 0usize);
@@ -65,6 +80,48 @@ fn main() {
         console.set_pad(0, Buttons::from_byte(pad));
         console.run_frames(1);
         pads.push(pad);
+        if let Some(tr) = console.trace.as_mut() {
+            for r in tr.bytes.chunks_exact(8) {
+                if r[3] & 0xc0 != 0 || r[3] & 16 != 0 {
+                    continue; // not a CPU cycle, or a cycle the DMA held
+                }
+                let ab = u16::from_le_bytes([r[0], r[1]]);
+                if !(0x2000..0x4000).contains(&ab) {
+                    continue;
+                }
+                let (reg, read, db) = (ab & 7, r[3] & 1 != 0, r[2]);
+                let mut end = |run: &mut Option<(u16, u16, u16)>| {
+                    if let Some((a, n, st)) = run.take() {
+                        writeln!(vram, "{f} {a:04X} {n} {st}").expect("write");
+                    }
+                };
+                match (reg, read) {
+                    (2, true) => latch = false,
+                    (0, false) => step = if db & 4 != 0 { 32 } else { 1 },
+                    (6, false) => {
+                        end(&mut run);
+                        addr = if latch { (addr & 0xff00) | db as u16 } else { (addr & 0x00ff) | ((db as u16 & 0x3f) << 8) };
+                        latch = !latch;
+                    }
+                    (7, false) => {
+                        run = match run {
+                            Some((a, n, st)) if st == step => Some((a, n + 1, st)),
+                            other => {
+                                let mut o = other;
+                                end(&mut o);
+                                Some((addr, 1, step))
+                            }
+                        };
+                        addr = addr.wrapping_add(step) & 0x3fff;
+                    }
+                    _ => {}
+                }
+            }
+            tr.bytes.clear();
+            if let Some((a, n, st)) = run.take() {
+                writeln!(vram, "{f} {a:04X} {n} {st}").expect("write");
+            }
+        }
         let cells: Vec<u8> = (0..0x800u16).map(|k| console.peek(k)).collect();
         ram.write_all(&cells).expect("write");
         if grabs.contains(&f) {
@@ -85,6 +142,9 @@ fn main() {
         console.frames.clear();
     }
     ram.flush().expect("flush");
+    vram.flush().expect("flush");
+    drop(vram);
+    let _ = std::fs::remove_file(out.join(".vram-off"));
     std::fs::write(out.join("pad.bin"), &pads).expect("pad.bin");
     eprintln!("storyboard: {frames} frames, {written} pictures, {} bytes of memory a frame, in {}", 0x800, out.display());
 }
