@@ -17,7 +17,10 @@
 //! made to the picture chip's memory through $2006/$2007, one line each,
 //! `frame address count step`, where step is 1 or 32 as $2000 set it
 //! (the address is where the run started, before the chip's mirroring).
-//! It reads the console's trace, so it is slower.
+//! It also writes `scroll.txt`: every pair of writes to $2005, one line
+//! each, `frame line x y`, in the order made, with the picture line the
+//! second write fell on (below 240 the picture was being drawn: a split;
+//! 240 and on, the blank, which sets the next picture's scroll). It reads the console's trace, so it is slower.
 //!
 //! A commercial cartridge's memory and pictures are as private as the
 //! cartridge: OUT_DIR is the caller's to keep out of every repository.
@@ -65,6 +68,9 @@ fn main() {
         console.trace = Some(Default::default());
     }
     let mut vram = std::io::BufWriter::new(std::fs::File::create(out.join(if vram_on { "vram.txt" } else { ".vram-off" })).expect("vram.txt"));
+    let mut scroll = std::io::BufWriter::new(std::fs::File::create(out.join(if vram_on { "scroll.txt" } else { ".scroll-off" })).expect("scroll.txt"));
+    let mut scroll_x = 0u8;
+    let mut line = 0u16;
     // The program's view of the picture chip's address: the two-write
     // latch, the address, the step. A run is consecutive $2007 writes.
     let (mut latch, mut addr, mut step) = (false, 0u16, 1u16);
@@ -82,6 +88,9 @@ fn main() {
         pads.push(pad);
         if let Some(tr) = console.trace.as_mut() {
             for r in tr.bytes.chunks_exact(8) {
+                if r[3] & 0xc0 == 0x40 {
+                    line = u16::from_le_bytes([r[6], r[7]]); // the registers' record carries the line
+                }
                 if r[3] & 0xc0 != 0 || r[3] & 16 != 0 {
                     continue; // not a CPU cycle, or a cycle the DMA held
                 }
@@ -98,6 +107,15 @@ fn main() {
                 match (reg, read) {
                     (2, true) => latch = false,
                     (0, false) => step = if db & 4 != 0 { 32 } else { 1 },
+                    (5, false) => {
+                        // $2005 shares the two-write latch with $2006.
+                        if latch {
+                            writeln!(scroll, "{f} {line} {scroll_x} {db}").expect("write");
+                        } else {
+                            scroll_x = db;
+                        }
+                        latch = !latch;
+                    }
                     (6, false) => {
                         end(&mut run);
                         addr = if latch { (addr & 0xff00) | db as u16 } else { (addr & 0x00ff) | ((db as u16 & 0x3f) << 8) };
@@ -143,8 +161,11 @@ fn main() {
     }
     ram.flush().expect("flush");
     vram.flush().expect("flush");
+    scroll.flush().expect("flush");
     drop(vram);
+    drop(scroll);
     let _ = std::fs::remove_file(out.join(".vram-off"));
+    let _ = std::fs::remove_file(out.join(".scroll-off"));
     std::fs::write(out.join("pad.bin"), &pads).expect("pad.bin");
     eprintln!("storyboard: {frames} frames, {written} pictures, {} bytes of memory a frame, in {}", 0x800, out.display());
 }
