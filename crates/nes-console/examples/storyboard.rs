@@ -20,7 +20,9 @@
 //! It also writes `scroll.txt`: every pair of writes to $2005, one line
 //! each, `frame line x y`, in the order made, with the picture line the
 //! second write fell on (below 240 the picture was being drawn: a split;
-//! 240 and on, the blank, which sets the next picture's scroll). It reads the console's trace, so it is slower.
+//! 240 and on, the blank, which sets the next picture's scroll). And
+//! `apu.txt`: every write to the sound chip ($4000 to $4013, $4015,
+//! $4017), `frame register value`, register as its low byte in hex. It reads the console's trace, so it is slower.
 //!
 //! A commercial cartridge's memory and pictures are as private as the
 //! cartridge: OUT_DIR is the caller's to keep out of every repository.
@@ -69,6 +71,7 @@ fn main() {
     }
     let mut vram = std::io::BufWriter::new(std::fs::File::create(out.join(if vram_on { "vram.txt" } else { ".vram-off" })).expect("vram.txt"));
     let mut scroll = std::io::BufWriter::new(std::fs::File::create(out.join(if vram_on { "scroll.txt" } else { ".scroll-off" })).expect("scroll.txt"));
+    let mut apu = std::io::BufWriter::new(std::fs::File::create(out.join(if vram_on { "apu.txt" } else { ".apu-off" })).expect("apu.txt"));
     let mut scroll_x = 0u8;
     let mut line = 0u16;
     // The program's view of the picture chip's address: the two-write
@@ -95,6 +98,9 @@ fn main() {
                     continue; // not a CPU cycle, or a cycle the DMA held
                 }
                 let ab = u16::from_le_bytes([r[0], r[1]]);
+                if r[3] & 1 == 0 && (ab <= 0x4013 && ab >= 0x4000 || ab == 0x4015 || ab == 0x4017) {
+                    writeln!(apu, "{f} {:02X} {}", ab & 0xff, r[2]).expect("write");
+                }
                 if !(0x2000..0x4000).contains(&ab) {
                     continue;
                 }
@@ -162,6 +168,9 @@ fn main() {
     ram.flush().expect("flush");
     vram.flush().expect("flush");
     scroll.flush().expect("flush");
+    apu.flush().expect("flush");
+    drop(apu);
+    let _ = std::fs::remove_file(out.join(".apu-off"));
     drop(vram);
     drop(scroll);
     let _ = std::fs::remove_file(out.join(".vram-off"));
