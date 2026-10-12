@@ -464,6 +464,29 @@ cargo test --release -p nes-console --test breakpoints
                                   # handler, never on an address not run, and
                                   # a run broken into stops makes the same
                                   # pictures; MUTATE_BREAK=1 must go red
+cargo test --release -p nes-console --test writes
+                                  # the write log (writes.rs): what a
+                                  # program wrote to the picture chip's
+                                  # memory, the scroll, the sound chip and
+                                  # the cartridge's own range, a line a
+                                  # write, the text `storyboard` writes to
+                                  # vram.txt, scroll.txt, apu.txt and
+                                  # mapper.txt; held to what the example
+                                  # wrote before the log was a module, on
+                                  # a cartridge that writes all four every
+                                  # frame (testrom::writes_rom; the test
+                                  # cartridge is an NROM and writes none
+                                  # to its own range). MUTATE_WRITELOG=1
+                                  # must go red
+cargo test --release -p nes-wasm  # with the rest: the page's write log
+                                  # (Machine::set_write_log, take_writes)
+                                  # is storyboard's byte for byte, the
+                                  # frames run in uneven runs, the history
+                                  # on and off under it, and stopped inside
+                                  # them by breakpoints and steps;
+                                  # MUTATE_WRITELOG_FEED=1 must go red
+NES_WRITES_ROM=rom.nes cargo test --release -p nes-wasm -- --ignored
+                                  # the same on any cartridge, by hand
 cargo run --release -p nes-console --example trace-cpu -- rom.nes
 cargo run --release -p nes-console --example flat-cpu -- rom.nes <half-cycles>
                                   # the instruments: the CPU's bus through

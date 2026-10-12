@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 use nes_console::record::{self, Played, Replay};
+use nes_console::writes::{Kind, WriteLog};
 use nes_console::{ines, Alignment, Console, Sound};
 use nes_glue::controller::Buttons;
 
@@ -17,6 +18,18 @@ pub struct Machine {
     /// history's end is this plus what it holds, a place that survives
     /// the trimming (`history_end`, `history_cut`).
     history_base: u64,
+    /// Whether the history is asked for: the trace is also on, and not
+    /// kept, while only the write log reads it.
+    history: bool,
+    /// The write log while it is on (`set_write_log`), and how much of
+    /// the trace it has read.
+    writes: Option<WriteLog>,
+    writes_at: usize,
+    /// MUTATE_WRITELOG_FEED=1, read as the log is turned on: frames run
+    /// together are fed as one, every write counted to the last, and a
+    /// stop's trace is not cut at a picture's end. Both of the write
+    /// log's comparisons with `storyboard` must go red.
+    writes_mutant: bool,
     /// The image it was powered on from: a saved state loads into a
     /// console powered on from it again, and names it by digest.
     rom: Vec<u8>,
@@ -70,7 +83,7 @@ impl Machine {
     pub fn new(rom: &[u8]) -> Result<Machine, String> {
         let (mut console, battery) = power_on(rom)?;
         console.sound = Some(Sound::default());
-        Ok(Machine { console, battery, history_base: 0, rom: rom.to_vec() })
+        Ok(Machine { console, battery, history_base: 0, history: false, writes: None, writes_at: 0, writes_mutant: false, rom: rom.to_vec() })
     }
 
     /// Whether the header says the cartridge has a battery behind its
@@ -94,7 +107,20 @@ impl Machine {
     /// `parity` return afterwards.
     pub fn run_frames(&mut self, n: usize) {
         self.console.frames.clear();
-        self.console.run_frames(n);
+        if self.writes.is_some() {
+            // A frame at a time, as `storyboard` runs: the log's frame
+            // is the trace of one.
+            let each = if self.writes_mutant { n.max(1) } else { 1 };
+            let mut left = n;
+            while left > 0 {
+                let k = each.min(left);
+                self.console.run_frames(k);
+                self.feed_writes(true);
+                left -= k;
+            }
+        } else {
+            self.console.run_frames(n);
+        }
         self.trim_history();
         if self.console.frames.len() > 1 {
             let last = self.console.frames.pop().unwrap();
@@ -109,7 +135,19 @@ impl Machine {
     /// picture is kept as `run_frames` keeps it; a stop before any
     /// completed keeps the one before (`frames_done` says how many did).
     pub fn run_frames_until(&mut self, n: usize, at: &[u16]) -> i32 {
-        let hit = self.console.run_frames_until(n, at);
+        let hit = if self.writes.is_some() {
+            let mut hit = None;
+            for _ in 0..n {
+                hit = self.console.run_frames_until(1, at);
+                self.feed_writes(hit.is_none());
+                if hit.is_some() {
+                    break;
+                }
+            }
+            hit
+        } else {
+            self.console.run_frames_until(n, at)
+        };
         self.keep_newest_frame();
         hit.map_or(-1, |a| a as i32)
     }
@@ -179,25 +217,29 @@ impl Machine {
 
     /// Tracing costs time, so the history is off until asked for.
     pub fn set_history(&mut self, on: bool) {
-        if on && self.console.trace.is_none() {
-            self.console.trace = Some(Default::default());
+        if on && !self.history {
+            self.feed_writes(false);
+            self.console.trace.get_or_insert_with(Default::default);
             self.history_base = 0;
         } else if !on {
-            self.console.trace = None;
+            if self.writes.is_none() {
+                self.console.trace = None;
+            }
             self.history_base = 0;
         }
+        self.history = on;
     }
 
     /// The newest `max` bytes of the history (a whole number of records).
     pub fn history(&self, max: usize) -> Vec<u8> {
-        let Some(t) = self.console.trace.as_ref() else { return Vec::new() };
+        let Some(t) = self.console.trace.as_ref().filter(|_| self.history) else { return Vec::new() };
         let n = max.min(t.bytes.len()) & !7;
         t.bytes[t.bytes.len() - n..].to_vec()
     }
 
     /// Where the history ends: every byte it has ever held, counted.
     pub fn history_end(&self) -> u64 {
-        self.history_base + self.console.trace.as_ref().map_or(0, |t| t.bytes.len() as u64)
+        self.history_base + self.console.trace.as_ref().filter(|_| self.history).map_or(0, |t| t.bytes.len() as u64)
     }
 
     /// Back to where the history ended at `end` (`history_end` then): what
@@ -211,6 +253,7 @@ impl Machine {
             } else if ((end - base) as usize) < t.bytes.len() {
                 t.bytes.truncate((end - base) as usize);
             }
+            self.writes_at = self.writes_at.min(t.bytes.len());
         }
     }
 
@@ -220,11 +263,87 @@ impl Machine {
                 let cut = (t.bytes.len() - HISTORY_KEEP) & !7;
                 t.bytes.drain(..cut);
                 self.history_base += cut as u64;
+                self.writes_at = self.writes_at.saturating_sub(cut);
             }
         }
     }
 
+    // ------------------------------------------------------------------
+    // The write log, for the roof's lessons (`nes_console::writes`): what
+    // the program wrote to the picture chip's memory, the scroll, the
+    // sound chip and the cartridge's own range, a line a write, as
+    // `storyboard` writes them to vram.txt, scroll.txt, apu.txt and
+    // mapper.txt. Read out of the console's trace as the machine runs.
+    // ------------------------------------------------------------------
+
+    /// The write log reads the trace, which costs time, so it is off
+    /// until asked for. Turned on at power-on it is `storyboard`'s log
+    /// line for line (a frame is the count of pictures completed before
+    /// it); turned on later it starts from there, and a saved state
+    /// loaded does not put the log's own view of the picture chip back
+    /// (`writes`). Turning it off drops what was not taken. It grows
+    /// until it is taken.
+    pub fn set_write_log(&mut self, on: bool) {
+        if on && self.writes.is_none() {
+            let t = self.console.trace.get_or_insert_with(Default::default);
+            self.writes_at = t.bytes.len();
+            self.writes = Some(WriteLog::default());
+            self.writes_mutant = std::env::var_os("MUTATE_WRITELOG_FEED").is_some();
+        } else if !on {
+            self.writes = None;
+            if !self.history {
+                self.console.trace = None;
+            }
+        }
+    }
+
+    pub fn write_log(&self) -> bool {
+        self.writes.is_some()
+    }
+
+    /// One log's lines so far, which empties it: `kind` is `vram`,
+    /// `scroll`, `apu` or `mapper`, the file `storyboard` writes them to.
+    /// Empty while the log is off. A run of $2007 writes is a line once
+    /// it has ended, so one under way at a stop inside a frame comes with
+    /// a later take.
+    pub fn take_writes(&mut self, kind: &str) -> Result<String, String> {
+        let kind = Kind::named(kind).ok_or_else(|| format!("no write log is called {kind:?}: vram, scroll, apu or mapper"))?;
+        self.feed_writes(false);
+        Ok(self.writes.as_mut().map(|w| w.take(kind)).unwrap_or_default())
+    }
+
+    /// The trace since the last look, into the write log. `ended`: the
+    /// console has just run exactly to a picture's end, and what is new
+    /// is that frame's, whole or the rest of it. Otherwise (a step, a
+    /// breakpoint) what is new is cut at each picture's own record: a
+    /// CPU cycle on the very master half-step a picture ended on is then
+    /// counted to the next frame, where a run counts it to that one.
+    fn feed_writes(&mut self, ended: bool) {
+        let (Some(w), Some(t)) = (self.writes.as_mut(), self.console.trace.as_mut()) else { return };
+        let new = &t.bytes[self.writes_at..];
+        if ended {
+            w.frame(self.console.frames_done - 1, new);
+        } else {
+            let mut from = 0;
+            for (i, r) in new.chunks_exact(record::RECORD_BYTES).enumerate() {
+                if r[3] & 0xc0 == record::KIND_FRAME && !self.writes_mutant {
+                    let at = (i + 1) * record::RECORD_BYTES;
+                    w.frame(u32::from_le_bytes([r[4], r[5], r[6], r[7]]) as u64, &new[from..at]);
+                    from = at;
+                }
+            }
+            w.feed(self.console.frames_done, &new[from..]);
+        }
+        if self.history {
+            self.writes_at = t.bytes.len();
+        } else {
+            t.bytes.clear();
+            self.writes_at = 0;
+        }
+    }
+
     fn keep_newest_frame(&mut self) {
+        self.feed_writes(false);
         self.trim_history();
         if self.console.frames.len() > 1 {
             let last = self.console.frames.pop().unwrap();
@@ -294,6 +413,7 @@ impl Machine {
     /// ends (a few master half-steps on at most: the machine runs there).
     pub fn save_state(&mut self) -> Result<Vec<u8>, String> {
         self.console.run_to_cycle_end();
+        self.feed_writes(false);
         Ok(state_with_rom(&self.rom, &self.console.save_state()?))
     }
 
@@ -491,6 +611,7 @@ impl Replayer {
 mod tests {
     use super::Machine;
     use nes_console::testrom;
+    use nes_console::writes::{Kind, WriteLog};
 
     fn ines() -> Vec<u8> {
         let mut rom = vec![0x4e, 0x45, 0x53, 0x1a, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -680,6 +801,162 @@ mod tests {
         assert!(m.history(4096).is_empty());
     }
 
+    /// `storyboard`'s run of `rom`, the four logs in `Kind::ALL`'s order:
+    /// the console powered on, its trace on, a frame at a time.
+    fn storyboard(rom: &[u8], frames: u64) -> [String; 4] {
+        let (mut console, _) = super::power_on(rom).unwrap();
+        console.trace = Some(Default::default());
+        let mut log = WriteLog::default();
+        for f in 0..frames {
+            console.run_frames(1);
+            let tr = console.trace.as_mut().unwrap();
+            log.frame(f, &tr.bytes);
+            tr.bytes.clear();
+            console.frames.clear();
+        }
+        Kind::ALL.map(|k| log.take(k))
+    }
+
+    fn take_all(m: &mut Machine, into: &mut [String; 4]) {
+        for (k, text) in Kind::ALL.into_iter().zip(into.iter_mut()) {
+            text.push_str(&m.take_writes(k.name()).unwrap());
+        }
+    }
+
+    /// The page's run of `rom`: the same frames in uneven runs, the logs
+    /// taken at uneven moments, the history turned on and off under it.
+    fn paged(rom: &[u8], frames: usize) -> [String; 4] {
+        let mut m = Machine::new(rom).unwrap();
+        m.set_write_log(true);
+        let mut got: [String; 4] = Default::default();
+        let (mut done, mut i) = (0, 0);
+        while done < frames {
+            let n = [1, 3, 7, 2, 16, 1, 5][i % 7].min(frames - done);
+            if i == 9 {
+                m.set_history(true);
+            }
+            if i == 30 {
+                m.set_history(false);
+            }
+            m.run_frames(n);
+            done += n;
+            if i % 3 == 0 {
+                take_all(&mut m, &mut got);
+            }
+            i += 1;
+        }
+        take_all(&mut m, &mut got);
+        got
+    }
+
+    #[test]
+    fn the_write_log_is_storyboard_s_however_the_page_runs_the_frames() {
+        // The write log's cartridge first: every log has a line a frame.
+        let want = storyboard(&testrom::writes_rom(), 300);
+        for (k, text) in Kind::ALL.into_iter().zip(&want) {
+            assert!(text.lines().count() > 250, "{}: {} lines is not a log worth comparing", k.name(), text.lines().count());
+        }
+        let got = paged(&testrom::writes_rom(), 300);
+        for ((k, got), want) in Kind::ALL.into_iter().zip(&got).zip(&want) {
+            assert!(got == want, "{}: the page's log parts from storyboard's at line {}", k.name(), got.lines().zip(want.lines()).take_while(|(a, b)| a == b).count());
+        }
+        // The test cartridge: its setup's few lines, and no mapper line
+        // at all (an NROM), so of it the mapper log is not compared.
+        let want = storyboard(&ines(), 300);
+        assert_eq!(want.each_ref().map(|t| t.lines().count()), [3, 1, 1, 0]);
+        assert_eq!(paged(&ines(), 300), want);
+    }
+
+    #[test]
+    fn the_write_log_is_off_until_asked_for_and_stops_when_told() {
+        let mut m = Machine::new(&testrom::writes_rom()).unwrap();
+        assert!(!m.write_log());
+        m.run_frames(5);
+        assert!(m.console.trace.is_none(), "off: the console traces nothing");
+        assert_eq!(m.take_writes("apu").unwrap(), "");
+        assert!(m.take_writes("ppu").is_err(), "a log that does not exist is refused by name");
+        // On from here: the frames are the pictures completed, 5 and on.
+        m.set_write_log(true);
+        m.run_frames(3);
+        let apu = m.take_writes("apu").unwrap();
+        assert!(apu.lines().count() >= 8, "{apu}");
+        assert!(apu.lines().all(|l| matches!(l.split(' ').next(), Some("5" | "6" | "7"))), "{apu}");
+        assert_eq!(m.take_writes("apu").unwrap(), "", "taken once");
+        assert!(m.history(4096).is_empty(), "the log's trace is not the history");
+        assert_eq!(m.history_end(), 0);
+        m.set_write_log(false);
+        assert!(m.console.trace.is_none(), "off again: the trace goes with it");
+        m.run_frames(2);
+        assert_eq!(m.take_writes("mapper").unwrap(), "");
+        // The history alone keeps its trace when the log goes.
+        m.set_history(true);
+        m.set_write_log(true);
+        m.set_write_log(false);
+        assert!(m.console.trace.is_some());
+    }
+
+    #[test]
+    fn the_write_log_follows_a_machine_that_stops_inside_its_frames() {
+        // Breakpoints on the NMI handler, single instructions, a step of
+        // most of a frame (which crosses a picture's end inside the
+        // handler, writes on both sides of it), scanlines and a saved
+        // state between the runs: the same 300 pictures, and on this
+        // cartridge the same lines (no write of its falls on the master
+        // half-step a picture ends on, where a stop and a run would
+        // count it to different frames).
+        let want = storyboard(&testrom::writes_rom(), 300);
+        let mut m = Machine::new(&testrom::writes_rom()).unwrap();
+        m.set_write_log(true);
+        let mut got: [String; 4] = Default::default();
+        let nmi = m.peek(0xfffa, 2);
+        let nmi = nmi[0] as u16 | (nmi[1] as u16) << 8;
+        let mut i = 0;
+        while m.frames_done() < 300 {
+            match i % 5 {
+                0 => {
+                    m.run_frames_until(2, &[nmi]);
+                }
+                1 => {
+                    for _ in 0..5 {
+                        m.step_instruction();
+                    }
+                }
+                2 => {
+                    m.step_half_cycles(50_000);
+                    m.step_scanline();
+                    m.save_state().unwrap();
+                }
+                3 => take_all(&mut m, &mut got),
+                _ => {
+                    // To the picture's end exactly, or the last run would overshoot.
+                    m.run_frames_until(1, &[]);
+                }
+            }
+            i += 1;
+        }
+        take_all(&mut m, &mut got);
+        // What was traced after the 300th picture is frame 300's.
+        let got = got.map(|t| t.lines().filter(|l| !l.starts_with("300 ")).map(|l| format!("{l}\n")).collect::<String>());
+        for ((k, got), want) in Kind::ALL.into_iter().zip(&got).zip(&want) {
+            assert!(got == want, "{}: parts from storyboard's at line {}", k.name(), got.lines().zip(want.lines()).take_while(|(a, b)| a == b).count());
+        }
+    }
+
+    /// The same comparison on any cartridge, by hand:
+    /// NES_WRITES_ROM=rom.nes cargo test --release -p nes-wasm -- --ignored
+    #[test]
+    #[ignore]
+    fn the_write_log_is_storyboard_s_on_a_cartridge_named() {
+        let rom = std::fs::read(std::env::var("NES_WRITES_ROM").expect("NES_WRITES_ROM")).expect("the ROM");
+        let frames = std::env::var("NES_WRITES_FRAMES").map_or(600, |f| f.parse().expect("NES_WRITES_FRAMES"));
+        let want = storyboard(&rom, frames as u64);
+        let got = paged(&rom, frames);
+        for ((k, got), want) in Kind::ALL.into_iter().zip(&got).zip(&want) {
+            eprintln!("{}: {} lines", k.name(), want.lines().count());
+            assert!(got == want, "{}: the page's log parts from storyboard's at line {}", k.name(), got.lines().zip(want.lines()).take_while(|(a, b)| a == b).count());
+        }
+    }
+
     #[test]
     fn the_steps_move_the_machine_by_their_units() {
         let mut m = Machine::new(&ines()).expect("the plumbing cartridge loads");
@@ -745,6 +1022,19 @@ mod bridge {
 
         pub fn history_cut(&mut self, end: f64) {
             self.m.history_cut(end as u64)
+        }
+
+        pub fn set_write_log(&mut self, on: bool) {
+            self.m.set_write_log(on)
+        }
+
+        pub fn write_log(&self) -> bool {
+            self.m.write_log()
+        }
+
+        /// `kind`: `vram`, `scroll`, `apu` or `mapper`.
+        pub fn take_writes(&mut self, kind: &str) -> Result<String, JsValue> {
+            self.m.take_writes(kind).map_err(|e| JsValue::from_str(&e))
         }
 
         pub fn colour(&self) -> Vec<u8> {

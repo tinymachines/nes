@@ -24,13 +24,16 @@
 //! `apu.txt`: every write to the sound chip ($4000 to $4013, $4015,
 //! $4017), `frame register value`, register as its low byte in hex. And
 //! `mapper.txt`: every write into the cartridge's own range ($8000 and
-//! up, where a board keeps its registers), `frame address value`. It reads the console's trace, so it is slower.
+//! up, where a board keeps its registers), `frame address value`. The
+//! four are `nes_console::writes`, the log nes-wasm's `Machine` keeps
+//! too. It reads the console's trace, so it is slower.
 //!
 //! A commercial cartridge's memory and pictures are as private as the
 //! cartridge: OUT_DIR is the caller's to keep out of every repository.
 
 use std::io::Write as _;
 
+use nes_console::writes::{Kind, WriteLog};
 use nes_console::{ines, Alignment, Console};
 use nes_glue::controller::Buttons;
 
@@ -71,16 +74,14 @@ fn main() {
     if vram_on {
         console.trace = Some(Default::default());
     }
-    let mut vram = std::io::BufWriter::new(std::fs::File::create(out.join(if vram_on { "vram.txt" } else { ".vram-off" })).expect("vram.txt"));
-    let mut scroll = std::io::BufWriter::new(std::fs::File::create(out.join(if vram_on { "scroll.txt" } else { ".scroll-off" })).expect("scroll.txt"));
-    let mut apu = std::io::BufWriter::new(std::fs::File::create(out.join(if vram_on { "apu.txt" } else { ".apu-off" })).expect("apu.txt"));
-    let mut mapper = std::io::BufWriter::new(std::fs::File::create(out.join(if vram_on { "mapper.txt" } else { ".mapper-off" })).expect("mapper.txt"));
-    let mut scroll_x = 0u8;
-    let mut line = 0u16;
-    // The program's view of the picture chip's address: the two-write
-    // latch, the address, the step. A run is consecutive $2007 writes.
-    let (mut latch, mut addr, mut step) = (false, 0u16, 1u16);
-    let mut run: Option<(u16, u16, u16)> = None;
+    let mut log = WriteLog::default();
+    let mut logs: Vec<(Kind, std::io::BufWriter<std::fs::File>)> = Vec::new();
+    if vram_on {
+        for kind in Kind::ALL {
+            let name = format!("{}.txt", kind.name());
+            logs.push((kind, std::io::BufWriter::new(std::fs::File::create(out.join(&name)).expect(&name))));
+        }
+    }
     let mut ram = std::io::BufWriter::new(std::fs::File::create(out.join("ram.bin")).expect("ram.bin"));
     let mut pads = Vec::with_capacity(frames);
     let (mut next, mut pad, mut written) = (0, 0u8, 0usize);
@@ -93,63 +94,10 @@ fn main() {
         console.run_frames(1);
         pads.push(pad);
         if let Some(tr) = console.trace.as_mut() {
-            for r in tr.bytes.chunks_exact(8) {
-                if r[3] & 0xc0 == 0x40 {
-                    line = u16::from_le_bytes([r[6], r[7]]); // the registers' record carries the line
-                }
-                if r[3] & 0xc0 != 0 || r[3] & 16 != 0 {
-                    continue; // not a CPU cycle, or a cycle the DMA held
-                }
-                let ab = u16::from_le_bytes([r[0], r[1]]);
-                if r[3] & 1 == 0 && ab >= 0x8000 {
-                    writeln!(mapper, "{f} {ab:04X} {}", r[2]).expect("write");
-                }
-                if r[3] & 1 == 0 && (ab <= 0x4013 && ab >= 0x4000 || ab == 0x4015 || ab == 0x4017) {
-                    writeln!(apu, "{f} {:02X} {}", ab & 0xff, r[2]).expect("write");
-                }
-                if !(0x2000..0x4000).contains(&ab) {
-                    continue;
-                }
-                let (reg, read, db) = (ab & 7, r[3] & 1 != 0, r[2]);
-                let mut end = |run: &mut Option<(u16, u16, u16)>| {
-                    if let Some((a, n, st)) = run.take() {
-                        writeln!(vram, "{f} {a:04X} {n} {st}").expect("write");
-                    }
-                };
-                match (reg, read) {
-                    (2, true) => latch = false,
-                    (0, false) => step = if db & 4 != 0 { 32 } else { 1 },
-                    (5, false) => {
-                        // $2005 shares the two-write latch with $2006.
-                        if latch {
-                            writeln!(scroll, "{f} {line} {scroll_x} {db}").expect("write");
-                        } else {
-                            scroll_x = db;
-                        }
-                        latch = !latch;
-                    }
-                    (6, false) => {
-                        end(&mut run);
-                        addr = if latch { (addr & 0xff00) | db as u16 } else { (addr & 0x00ff) | ((db as u16 & 0x3f) << 8) };
-                        latch = !latch;
-                    }
-                    (7, false) => {
-                        run = match run {
-                            Some((a, n, st)) if st == step => Some((a, n + 1, st)),
-                            other => {
-                                let mut o = other;
-                                end(&mut o);
-                                Some((addr, 1, step))
-                            }
-                        };
-                        addr = addr.wrapping_add(step) & 0x3fff;
-                    }
-                    _ => {}
-                }
-            }
+            log.frame(f as u64, &tr.bytes);
             tr.bytes.clear();
-            if let Some((a, n, st)) = run.take() {
-                writeln!(vram, "{f} {a:04X} {n} {st}").expect("write");
+            for (kind, file) in logs.iter_mut() {
+                file.write_all(log.take(*kind).as_bytes()).expect("write");
             }
         }
         let cells: Vec<u8> = (0..0x800u16).map(|k| console.peek(k)).collect();
@@ -172,18 +120,9 @@ fn main() {
         console.frames.clear();
     }
     ram.flush().expect("flush");
-    vram.flush().expect("flush");
-    scroll.flush().expect("flush");
-    apu.flush().expect("flush");
-    drop(apu);
-    mapper.flush().expect("flush");
-    drop(mapper);
-    let _ = std::fs::remove_file(out.join(".mapper-off"));
-    let _ = std::fs::remove_file(out.join(".apu-off"));
-    drop(vram);
-    drop(scroll);
-    let _ = std::fs::remove_file(out.join(".vram-off"));
-    let _ = std::fs::remove_file(out.join(".scroll-off"));
+    for (_, file) in logs.iter_mut() {
+        file.flush().expect("flush");
+    }
     std::fs::write(out.join("pad.bin"), &pads).expect("pad.bin");
     eprintln!("storyboard: {frames} frames, {written} pictures, {} bytes of memory a frame, in {}", 0x800, out.display());
 }

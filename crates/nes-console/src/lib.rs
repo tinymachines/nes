@@ -28,6 +28,7 @@ pub mod record;
 pub mod sound;
 pub mod state;
 pub mod testrom;
+pub mod writes;
 
 pub use board::Board;
 pub use console::{after_vsync_onset, picture_after_latch, Alignment, Console, CpuStep, PpuStatus, VSYNC_ONSET};

@@ -2,17 +2,25 @@
 //! counts NMIs, and its tiles) as an iNES file: mapper 0, 32 KiB of PRG,
 //! 8 KiB of CHR, vertical mirroring. For a page that needs a cartridge
 //! nobody owns (the roof's e2e), never a game.
-//!   cargo run --release -p nes-console --example export-testrom -- out.nes [bars|pad|pad-dmc|pad-paint|cal]
+//!   cargo run --release -p nes-console --example export-testrom -- out.nes [bars|pad|pad-dmc|pad-paint|cal|writes]
 //! With `bars`, the colour-bars cartridge (testrom::bars_program); with
 //! `pad` or `pad-dmc`, the bench's polling cartridge (testrom::pad_program);
 //! with `pad-paint`, the one whose picture shows the byte it read; with
 //! `cal`, the calibration cartridge (nes_console::cal), and its manifest
-//! of measured regions is written beside it as `<out>.json`.
-use nes_console::testrom::{bars_chr, bars_program, chr, pad_paint_program, pad_program, program};
+//! of measured regions is written beside it as `<out>.json`. With
+//! `writes`, the write log's cartridge (testrom::writes_rom), which is
+//! not an NROM and is written as the image it already is.
+use nes_console::testrom::{bars_chr, bars_program, chr, pad_paint_program, pad_program, program, writes_rom};
 
 fn main() {
     let out = std::env::args().nth(1).unwrap_or_else(|| "testcart.nes".into());
     let kind = std::env::args().nth(2).unwrap_or_default();
+    if kind == "writes" {
+        let bytes = writes_rom();
+        std::fs::write(&out, &bytes).unwrap();
+        println!("wrote {out}: {} bytes, mapper 2, 32 KiB PRG, CHR-RAM", bytes.len());
+        return;
+    }
     let (prg, chr) = match kind.as_str() {
         "bars" => (bars_program(), bars_chr()),
         "pad" => (pad_program(false), chr()),
